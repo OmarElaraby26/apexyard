@@ -7,11 +7,11 @@ Reusable GitHub Actions workflows that integrate ApexStack's automated agents in
 | Pipeline | Agent | Purpose | Trigger |
 |----------|-------|---------|---------|
 | `pr-title-check.yml` | Governance | Enforce ticket ID in PR titles | Every PR |
-| `security.yml` | Sentinel | Security scanning (SAST, dependencies, secrets) | Every PR, push to main |
+| `security.yml` | Shield | Security scanning (SAST, dependencies, secrets) | Every PR, push to main |
 | `dependency-audit.yml` | Guardian | Dependency vulnerabilities, outdated packages, licenses | Weekly, package changes |
 | `code-quality.yml` | Rex | TypeScript, ESLint, tests, build verification | Every PR |
 | `review-check.yml` | Rex (verification) | Block merge if Rex hasn't reviewed the latest commit | Every PR + review event |
-| `seo-check.yml` | Scout | SEO analysis for content files | Content changes |
+| `seo-check.yml` | SEO Check | SEO analysis for content files | Content changes |
 | `ci.yml` | Combined | All checks in one pipeline | Every PR |
 
 ---
@@ -63,7 +63,7 @@ cp .apexstack/golden-paths/pipelines/ci.yml .github/workflows/
 
 ### Security (`security.yml`)
 
-**Agent**: Sentinel (Security Scanner)
+**Agent**: Shield (Security Scanner)
 
 **Checks performed**:
 - Semgrep SAST (OWASP Top 10, security-audit rules)
@@ -136,7 +136,7 @@ cp .apexstack/golden-paths/pipelines/ci.yml .github/workflows/
 
 ### SEO Check (`seo-check.yml`)
 
-**Agent**: Scout (SEO Optimizer)
+**Pipeline**: SEO Check (no agent — pure CI workflow)
 
 **Checks performed**:
 - H1 title presence and uniqueness

@@ -36,35 +36,62 @@ apexstack/
 │   ├── hooks/             # Shell scripts: block git add -A, block main push, secrets scan, branch & PR validation, pre-push reminder
 │   ├── rules/             # Modular rule files imported via @.claude/rules/* (AgDR triggers, code standards, git conventions, PR quality, workflow gates)
 │   ├── agents/            # Sub-agents: Code Reviewer (Rex), Security Reviewer (Shield), Dependency Auditor (Guardian), PR Manager, Ticket Manager
-│   └── skills/            # Slash commands: /decide, /code-review, /security-review, /audit-deps, /write-spec
+│   └── skills/            # 13 slash commands: /decide, /code-review, /security-review, /audit-deps, /write-spec, /idea, /handover, /projects, /inbox, /status, /tasks, /roadmap, /stakeholder-update
+│
+├── workspace/             # Live local clones (multi-project mode) — gitignored
+├── projects/              # Per-project committed docs (multi-project mode)
+├── apexstack.projects.yaml.example  # Portfolio registry template
 │
 ├── golden-paths/          # Reusable infra & ops templates
 │   └── pipelines/         # Drop-in GitHub Actions workflows (CI, code quality, security, dependency audit, PR title check, review check, SEO check)
 │
 ├── docs/                  # Documentation
-│   └── getting-started.md # Setup guide
+│   ├── getting-started.md # Setup guide
+│   └── multi-project.md   # Full guide to multi-project mode
 │
 └── site/                  # Landing page
     └── index.html
 ```
 
-## Quick Start
+## Operating modes
 
-### 1. Copy the stack into your repo
+ApexStack supports two modes, set in `onboarding.yaml`:
+
+| Mode | Default? | Use when |
+|------|:---:|------|
+| **`multi-project`** | ✅ default | You manage two or more repos as one organisation. ApexStack lives in an "ops repo" with a portfolio registry (`apexstack.projects.yaml`). Skills like `/projects`, `/inbox`, `/status`, `/tasks` aggregate across the registry. |
+| `single-project` | opt-in | You manage exactly one repo and don't see that changing. ApexStack lives inside that one repo. The same skills scope to the current repo. |
+
+Full guide: [`docs/multi-project.md`](docs/multi-project.md).
+
+## Quick Start (multi-project — the default)
+
+### 1. Clone ApexStack into your ops repo
+
+The "ops repo" is the repo where you'll run Claude Code from to manage your portfolio. Common choices: a dedicated `your-org/ops` repo, or an existing internal-tools / playbook repo.
 
 ```bash
-# Clone ApexStack
-git clone https://github.com/me2resh/apexstack.git
-
-# Copy into your project
-cp -r apexstack/ your-project/.apexstack/
+# from your ops repo
+git clone https://github.com/me2resh/apexstack.git .apexstack
 ```
 
-### 2. Fill in your company config
+### 2. Symlink the runnable layer
 
-Edit `onboarding.yaml` with your company details:
+Claude Code only looks for hooks, agents, skills, and `settings.json` at `.claude/`. Symlink so apexstack updates stay in sync:
+
+```bash
+# in your ops repo root
+ln -s .apexstack/.claude .claude
+```
+
+### 3. Configure
+
+Edit `.apexstack/onboarding.yaml`:
 
 ```yaml
+apexstack:
+  mode: multi-project   # default — leave as is
+
 company:
   name: "Your Company"
   mission: "What you're building and why"
@@ -74,41 +101,49 @@ team:
     role: "tech-lead"
 ```
 
-### 3. Point Claude Code at the stack
+### 4. List your projects
 
-Add to your project's `CLAUDE.md`:
+```bash
+# in your ops repo root
+cp .apexstack/apexstack.projects.yaml.example apexstack.projects.yaml
+$EDITOR apexstack.projects.yaml   # list every repo you manage
+```
+
+### 5. Wire CLAUDE.md
+
+In your ops repo's `CLAUDE.md`:
 
 ```markdown
 # Development Stack
 @.apexstack/CLAUDE.md
 ```
 
-### 4. Install the `.claude/` layer (optional but recommended)
+### 6. Start working
 
-The markdown content above (roles, workflows, templates, rules) lives under `.apexstack/`. To activate the **executable** layer (hooks, agents, skills) you also need to make `.claude/` visible at the project root, because Claude Code only looks for hooks, agents, skills, and `settings.json` at `.claude/`:
-
-```bash
-# Option A — copy
-cp -r apexstack/.claude your-project/.claude
-
-# Option B — symlink (so updates to apexstack stay in sync)
-ln -s "$(pwd)/apexstack/.claude" your-project/.claude
+```
+/projects          # list every managed project + status
+/inbox             # PRs, issues, comments needing your attention
+/status            # git + CI snapshot per project
+/decide            # make a technical decision (creates an AgDR)
 ```
 
-After this, the hooks fire on `git`/`gh` commands, `/decide` and `/code-review` are available as slash commands, and the Code Reviewer agent can be invoked.
+The hooks fire on every `git` / `gh` command, the cross-project skills aggregate across the registry, and the Code Reviewer agent can be invoked with `/code-review <pr>`.
 
-### 5. Start working
+---
 
-Claude Code now understands your team structure, processes, and standards. It can:
+### Single-project install (opt-out)
 
-- Act as any defined role (code reviewer, QA engineer, security auditor, etc.)
-- Follow your SDLC workflow with proper gates
-- Generate documents from templates (PRDs, technical designs, ADRs)
-- Make structured technical decisions with Agent Decision Records
-- Enforce code review standards and quality gates
-- Run `/decide`, `/code-review`, `/security-review`, `/audit-deps`, `/write-spec` as slash commands
-- Block `git add -A`, direct pushes to main, and committed secrets via hooks
-- Drop the `golden-paths/pipelines/*.yml` files into `.github/workflows/` for CI
+If you only have one repo, install directly into it instead of an ops repo:
+
+```bash
+# in your one project repo
+git clone https://github.com/me2resh/apexstack.git .apexstack
+ln -s .apexstack/.claude .claude
+$EDITOR .apexstack/onboarding.yaml   # set apexstack.mode: single-project
+echo "@.apexstack/CLAUDE.md" >> CLAUDE.md
+```
+
+Skip step 4 entirely — there's no registry. The same skills scope to the current repo. Roadmap lives at `ROADMAP.md`, ideas at `IDEAS.md`. See [`docs/multi-project.md`](docs/multi-project.md) for the full comparison.
 
 ## Why ApexStack?
 

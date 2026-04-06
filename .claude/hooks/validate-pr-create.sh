@@ -27,9 +27,11 @@ if [ -z "$TITLE" ]; then
 fi
 
 # Validate PR title format if we can extract it
-# Accepts: type(<UPPERCASE-PREFIX>-<digits>): … or type(#<digits>): …
+# Accepts: type(<UPPERCASE-PREFIX 2-10 chars>-<digits>): … or type(#<digits>): …
+# Note: this pattern is intentionally aligned with the pr-title-check.yml
+# CI workflow regex so anything that passes this hook also passes CI.
 if [ -n "$TITLE" ]; then
-  if ! echo "$TITLE" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\(([A-Z]+-[0-9]+|#[0-9]+)\):'; then
+  if ! echo "$TITLE" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\(([A-Z]{2,10}-[0-9]+|#[0-9]+)\):'; then
     ERRORS="${ERRORS}PR title '$TITLE' doesn't match format: type(TICKET-ID): description\n"
   fi
 fi
@@ -44,7 +46,7 @@ fi
 # Validate branch name has ticket ID
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
 if [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" != "main" ] && [ "$CURRENT_BRANCH" != "master" ]; then
-  if ! echo "$CURRENT_BRANCH" | grep -qE '[A-Z]+-[0-9]+|GH-[0-9]+|#[0-9]+'; then
+  if ! echo "$CURRENT_BRANCH" | grep -qE '[A-Z]{2,10}-[0-9]+|GH-[0-9]+|#[0-9]+'; then
     ERRORS="${ERRORS}Branch '$CURRENT_BRANCH' missing ticket ID.\n"
   fi
 fi

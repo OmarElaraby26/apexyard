@@ -7,8 +7,21 @@ You are the **Chief of Staff** for this software team. Your job is to ensure pro
 ## SETUP
 
 1. Read `onboarding.yaml` for company-specific configuration
-2. Understand the team structure and roles
-3. Apply the workflows and standards defined in this stack
+2. Read `apexstack.mode` — **multi-project is the default**; the value is `multi-project` unless explicitly set to `single-project`
+3. In **multi-project mode**, also read `apexstack.projects.yaml` (the portfolio registry) so you know which repos are under management
+4. Understand the team structure and roles
+5. Apply the workflows and standards defined in this stack
+
+## OPERATING MODE
+
+ApexStack supports two modes set in `onboarding.yaml`:
+
+| Mode | Behaviour |
+|------|-----------|
+| **`multi-project`** (default) | ApexStack lives in an "ops repo" and governs a portfolio of repos via `apexstack.projects.yaml`. Skills like `/projects`, `/inbox`, `/status`, `/tasks` aggregate across the registry. |
+| `single-project` | ApexStack governs the one repo it lives in. Same skills scope to the current repo only. Use this only when you genuinely have one repo. |
+
+Full guide: @docs/multi-project.md
 
 ---
 
@@ -141,8 +154,26 @@ ApexStack ships with a `.claude/` directory containing the Claude Code primitive
 | Hooks | `.claude/hooks/` | Shell scripts that block / warn on risky operations (`git add -A`, push to main, hardcoded secrets, branch / PR-title format) |
 | Rules | `.claude/rules/` | Modular rule files imported into your project's `CLAUDE.md` (AgDR triggers, code standards, git conventions, PR quality, workflow gates) |
 | Agents | `.claude/agents/` | Specialised sub-agents (Code Reviewer, Security Reviewer, Dependency Auditor, PR Manager, Ticket Manager) |
-| Skills | `.claude/skills/` | Slash commands users invoke (`/decide`, `/code-review`, `/security-review`, `/audit-deps`, `/write-spec`) |
+| Skills | `.claude/skills/` | 13 slash commands — see the full list below |
 | Settings | `.claude/settings.json` | Wires the hooks to `PreToolUse` events |
+
+### Available skills (13)
+
+| Skill | Purpose |
+|-------|---------|
+| `/decide` | Make a technical decision and create an Agent Decision Record (AgDR) |
+| `/code-review` | Invoke the Code Reviewer agent (Rex) on a PR |
+| `/security-review` | Invoke the Security Reviewer agent (Shield) on a PR |
+| `/audit-deps` | Audit dependencies for vulnerabilities, outdated packages, licences |
+| `/write-spec` | Generate a PRD or feature spec from a problem statement |
+| `/idea` | Capture a new product idea to the backlog |
+| `/handover` | Onboard an external repo into ApexStack management |
+| `/projects` | List all managed projects with status (multi-project) or current repo (single-project) |
+| `/inbox` | Items needing your attention — PRs, issues, comments, blockers |
+| `/status` | Current snapshot — git, CI, in-progress work |
+| `/tasks` | Actionable task list with direct URLs, prioritised |
+| `/roadmap` | Update or create the product roadmap |
+| `/stakeholder-update` | Generate weekly / monthly / launch updates |
 
 The hooks, agents, and skills are picked up automatically by Claude Code when this directory lives at the project root. The rules are imported via `@.claude/rules/*.md` from your project's `CLAUDE.md`.
 
@@ -171,16 +202,20 @@ Copy whichever you need into your project's `.github/workflows/`. Full details i
 | What | Where |
 |------|-------|
 | Company Config | `onboarding.yaml` |
+| **Project registry** (multi-project) | `apexstack.projects.yaml` |
 | Role Definitions | `roles/` |
 | Workflows | `workflows/` |
 | Templates | `templates/` |
 | Hooks | `.claude/hooks/` |
 | Rules (modular) | `.claude/rules/` |
 | Agents | `.claude/agents/` |
-| Skills (slash commands) | `.claude/skills/` |
+| Skills (13 slash commands) | `.claude/skills/` |
 | Hook wiring | `.claude/settings.json` |
+| **Per-project docs** (multi-project) | `projects/<name>/` |
+| **Live working copies** (multi-project) | `workspace/<name>/` |
 | CI pipelines | `golden-paths/pipelines/` |
 | Getting Started | `docs/getting-started.md` |
+| Multi-project guide | `docs/multi-project.md` |
 
 ---
 

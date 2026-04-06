@@ -1,7 +1,7 @@
-# SEO Check Pipeline — Scout Agent
+# SEO Check Pipeline — SEO Check Agent
 # Copy this to .github/workflows/seo-check.yml in your project.
 #
-# Agent: Scout (SEO Optimizer)
+# Agent: SEO Check (SEO Optimizer)
 # Trigger: on content file changes (blog posts, landing pages, docs)
 # Purpose: automated SEO analysis before publishing content
 
@@ -29,8 +29,8 @@ permissions:
   pull-requests: write
 
 jobs:
-  scout-seo-check:
-    name: Scout SEO Analysis
+  seo-check:
+    name: SEO Check SEO Analysis
     runs-on: ubuntu-latest
 
     steps:
@@ -182,7 +182,7 @@ jobs:
           fi
 
           cat << EOF >> $GITHUB_STEP_SUMMARY
-          # 📈 Scout SEO Analysis Report
+          # 📈 SEO Check SEO Analysis Report
 
           **Files Analyzed**: $FILE_COUNT
           **Average SEO Score**: $AVG_SCORE/100
@@ -207,7 +207,7 @@ jobs:
           \`\`\`
 
           ---
-          *Analyzed by Scout (SEO Optimizer Agent)*
+          *Analyzed by SEO Check (SEO Optimizer Agent)*
           EOF
 
       - name: Post SEO Review Comment
@@ -233,7 +233,7 @@ jobs:
               recommendation = 'Significant SEO improvements needed. Please review and fix.';
             }
 
-            const body = `## 📈 Scout SEO Analysis
+            const body = `## 📈 SEO Check SEO Analysis
 
             **Files Analyzed**: ${fileCount}
             **Average Score**: ${avgScore}/100
@@ -252,7 +252,7 @@ jobs:
             - [ ] External links to authoritative sources
 
             ---
-            *Analyzed by Scout (SEO Optimizer Agent)*`;
+            *Analyzed by SEO Check (SEO Optimizer Agent)*`;
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -261,7 +261,7 @@ jobs:
             });
 
             const botComment = comments.find(c =>
-              c.user.type === 'Bot' && c.body.includes('Scout SEO Analysis')
+              c.user.type === 'Bot' && c.body.includes('SEO Check SEO Analysis')
             );
 
             if (botComment) {

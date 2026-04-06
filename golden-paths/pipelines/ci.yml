@@ -1,7 +1,7 @@
 # Combined CI Pipeline — All Agents
 # Copy this to .github/workflows/ci.yml for a complete CI setup.
 #
-# Agents: Rex (Code Quality) + Sentinel (Security) + Guardian (Dependencies)
+# Agents: Rex (Code Quality) + Shield (Security) + Guardian (Dependencies)
 # Trigger: every PR and every push to main
 # Purpose: single pipeline with all automated quality gates
 
@@ -93,7 +93,7 @@ jobs:
   # SENTINEL — Security Scanning
   # =============================================
   security:
-    name: "🛡️ Sentinel: Security"
+    name: "🛡️ Shield: Security"
     runs-on: ubuntu-latest
     needs: code-quality  # run after code quality (fail fast)
 
@@ -206,7 +206,7 @@ jobs:
           | Tests | ${{ needs.code-quality.outputs.tests == 'pass' && '✅ Pass' || '❌ Fail' }} |
           | Build | ${{ needs.code-quality.outputs.build == 'pass' && '✅ Pass' || '❌ Fail' }} |
 
-          ## Security (Sentinel)
+          ## Security (Shield)
 
           | Check | Status |
           |-------|--------|
@@ -215,7 +215,7 @@ jobs:
           | Secrets Detection | ${{ needs.security.outputs.secrets != 'fail' && '✅ Pass' || '⚠️ Issues' }} |
 
           ---
-          *Pipeline powered by Rex, Sentinel, and Guardian agents.*
+          *Pipeline powered by Rex, Shield, and Guardian agents.*
           EOF
 
       - name: Post PR Comment
@@ -233,7 +233,7 @@ jobs:
             | Agent | Job | Status |
             |-------|-----|--------|
             | 🦖 Rex | Code Quality | ${cq === 'success' ? '✅' : '❌'} ${cq} |
-            | 🛡️ Sentinel | Security | ${sec === 'success' ? '✅' : '❌'} ${sec} |
+            | 🛡️ Shield | Security | ${sec === 'success' ? '✅' : '❌'} ${sec} |
 
             ${!allPassed ? '### Please fix the failing checks before merge.' : '### Ready for review!'}`;
 

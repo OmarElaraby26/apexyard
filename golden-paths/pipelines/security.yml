@@ -1,7 +1,7 @@
-# Security Pipeline — Sentinel Agent
+# Security Pipeline — Shield Agent
 # Copy this to .github/workflows/security.yml in your project.
 #
-# Agent: Sentinel (Security Scanner)
+# Agent: Shield (Security Scanner)
 # Trigger: every PR and push to main
 # Purpose: automated security scanning following OWASP Top 10
 
@@ -22,8 +22,8 @@ env:
   FAIL_ON_SEVERITY: high
 
 jobs:
-  sentinel-scan:
-    name: Sentinel Security Scan
+  shield-scan:
+    name: Shield Security Scan
     runs-on: ubuntu-latest
 
     steps:
@@ -129,7 +129,7 @@ jobs:
   security-summary:
     name: Security Summary
     runs-on: ubuntu-latest
-    needs: [sentinel-scan, eslint-security]
+    needs: [shield-scan, eslint-security]
     if: github.event_name == 'pull_request'
 
     steps:
@@ -145,10 +145,10 @@ jobs:
 
             const botComment = comments.find(comment =>
               comment.user.type === 'Bot' &&
-              comment.body.includes('Sentinel Security Scan')
+              comment.body.includes('Shield Security Scan')
             );
 
-            const body = `## 🛡️ Sentinel Security Scan Complete
+            const body = `## 🛡️ Shield Security Scan Complete
 
             | Check | Status |
             |-------|--------|
@@ -158,7 +158,7 @@ jobs:
             | ESLint Security | ✅ Passed |
 
             ---
-            *Scanned by Sentinel (Security Scanner Agent)*`;
+            *Scanned by Shield (Security Scanner Agent)*`;
 
             if (botComment) {
               await github.rest.issues.updateComment({

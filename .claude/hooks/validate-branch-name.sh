@@ -26,8 +26,10 @@ if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ] || [ "$CUR
 fi
 
 # Validate: type/<TICKET>-<description>
-#   <TICKET> = uppercase prefix + dash + digits  OR  GH-<digits>  OR  #<digits>
-if ! echo "$CURRENT_BRANCH" | grep -qE '^(feature|fix|refactor|chore|docs|test|spike|ci|build|perf)/([A-Z]+-[0-9]+|GH-[0-9]+|#[0-9]+)-'; then
+#   <TICKET> = 2-10 char uppercase prefix + dash + digits  OR  GH-<digits>  OR  #<digits>
+# Note: this pattern is intentionally aligned with the pr-title-check.yml
+# CI workflow regex so anything that passes this hook also passes CI.
+if ! echo "$CURRENT_BRANCH" | grep -qE '^(feature|fix|refactor|chore|docs|test|spike|ci|build|perf)/([A-Z]{2,10}-[0-9]+|GH-[0-9]+|#[0-9]+)-'; then
   echo "WARNING: Branch '$CURRENT_BRANCH' doesn't follow naming convention: {type}/{TICKET-ID}-{description}" >&2
   echo "Examples: feature/ABC-123-add-auth, fix/GH-45-login-bug, docs/ENG-99-update-readme" >&2
   # Warning only — does not block

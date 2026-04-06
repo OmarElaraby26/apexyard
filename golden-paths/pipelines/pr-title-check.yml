@@ -28,9 +28,13 @@ jobs:
             const title = context.payload.pull_request.title;
 
             // Pattern matches:
-            //   Project tracker: ABC-123, ENG-456, PROJ-789 (uppercase prefix + dash + digits)
+            //   Project tracker: ABC-123, ENG-456, PROJ-789 (2-10 char uppercase prefix + dash + digits)
             //   GitHub Issues:   #58, #123
-            const trackerPattern = /[A-Z]{2,5}-\d+/;
+            //
+            // Note: pattern intentionally aligned with the local hooks
+            // (.claude/hooks/validate-branch-name.sh and validate-pr-create.sh)
+            // so anything that passes the hooks also passes this CI check.
+            const trackerPattern = /[A-Z]{2,10}-\d+/;
             const githubPattern = /#\d+/;
 
             const trackerMatch = title.match(trackerPattern);
