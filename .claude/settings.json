@@ -128,6 +128,26 @@
           },
           {
             "type": "command",
+            "if": "Bash(gh pr create *)",
+            "command": "bash -c 'r=$PWD;while [ ! -f \"$r/onboarding.yaml\" ] && [ \"$r\" != / ];do r=${r%/*};done;exec \"$r/.claude/hooks/block-closes-without-exempt-label.sh\"'"
+          },
+          {
+            "type": "command",
+            "if": "Bash(gh issue close *)",
+            "command": "bash -c 'r=$PWD;while [ ! -f \"$r/onboarding.yaml\" ] && [ \"$r\" != / ];do r=${r%/*};done;exec \"$r/.claude/hooks/block-issue-close-without-qa-passed.sh\"'"
+          },
+          {
+            "type": "command",
+            "if": "Bash(gh issue edit *)",
+            "command": "bash -c 'r=$PWD;while [ ! -f \"$r/onboarding.yaml\" ] && [ \"$r\" != / ];do r=${r%/*};done;exec \"$r/.claude/hooks/block-issue-close-without-qa-passed.sh\"'"
+          },
+          {
+            "type": "command",
+            "if": "Bash(gh api *)",
+            "command": "bash -c 'r=$PWD;while [ ! -f \"$r/onboarding.yaml\" ] && [ \"$r\" != / ];do r=${r%/*};done;exec \"$r/.claude/hooks/block-issue-close-without-qa-passed.sh\"'"
+          },
+          {
+            "type": "command",
             "if": "Bash(gh issue comment *)",
             "command": "bash -c 'r=$PWD;while [ ! -f \"$r/onboarding.yaml\" ] && [ \"$r\" != / ];do r=${r%/*};done;exec \"$r/.claude/hooks/block-private-refs-in-public-repos.sh\"'"
           },

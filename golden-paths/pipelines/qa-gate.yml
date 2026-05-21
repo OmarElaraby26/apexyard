@@ -1,0 +1,86 @@
+# QA Gate — Reopen issues closed without verification
+# Copy this to .github/workflows/qa-gate.yml in your project.
+#
+# Purpose: server-side safety net for the QA gate. When an issue is closed
+# (any source — CLI, web UI, GitHub auto-close on PR merge), this workflow
+# checks the labels. If neither an exempt label nor `qa-passed` is present,
+# the issue is automatically reopened with a comment naming the gate.
+#
+# Pairs with the client-side hook:
+#   .claude/hooks/block-issue-close-without-qa-passed.sh
+# (Hook is local enforcement — fast feedback; this workflow is the
+# can't-be-bypassed server-side floor.)
+#
+# Exempt labels (allow close): chore | docs | spike | infra | qa-bypass
+# Verification label (allow close): qa-passed
+#
+# Configure the label sets via repository variables if you need to deviate:
+#   QA_EXEMPT_LABELS=chore,docs,spike,infra,qa-bypass
+#   QA_VERIFIED_LABEL=qa-passed
+
+name: QA Gate
+
+on:
+  issues:
+    types: [closed]
+
+permissions:
+  issues: write
+
+jobs:
+  reopen-if-not-verified:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check labels + reopen if QA gate not satisfied
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const labels = (issue.labels || []).map(l => l.name);
+
+            const exempt = (process.env.QA_EXEMPT_LABELS
+              || 'chore,docs,spike,infra,qa-bypass').split(',').map(s => s.trim());
+            const verified = (process.env.QA_VERIFIED_LABEL || 'qa-passed').trim();
+
+            if (labels.includes(verified)) {
+              core.info(`Issue #${issue.number} closed with '${verified}' — allowed.`);
+              return;
+            }
+            if (exempt.some(e => labels.includes(e))) {
+              core.info(`Issue #${issue.number} carries exempt label — allowed.`);
+              return;
+            }
+
+            core.warning(`Issue #${issue.number} closed without QA verification. Reopening.`);
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              state: 'open',
+            });
+
+            const closer = context.payload.sender?.login || 'someone';
+            const body = [
+              `⚠ Auto-reopened by QA Gate.`,
+              ``,
+              `This issue was closed by @${closer} but the QA gate is not satisfied:`,
+              `  - no \`qa-passed\` label (Salim has not verified the acceptance criteria), AND`,
+              `  - no exempt label (chore / docs / spike / infra / qa-bypass).`,
+              ``,
+              `Two paths to close:`,
+              `  1. Have Salim verify the ticket. On pass, apply \`qa-passed\` then close.`,
+              `  2. If this is genuinely infra-class with no user-facing AC, apply an exempt label first (e.g. \`chore\`).`,
+              ``,
+              `See \`workflows/sdlc.md\` § Phase 5 and \`.claude/rules/workflow-gates.md\` § "QA State is Mandatory".`,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body,
+            });
+        env:
+          QA_EXEMPT_LABELS: ${{ vars.QA_EXEMPT_LABELS }}
+          QA_VERIFIED_LABEL: ${{ vars.QA_VERIFIED_LABEL }}

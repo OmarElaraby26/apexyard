@@ -37,11 +37,16 @@ Also check before pushing:
 ## Before `gh pr create`
 
 ```
-[ ] Ticket exists?            NO → create the ticket FIRST
-[ ] Ticket has AC?            NO → add acceptance criteria
-[ ] Branch has ticket ID?     NO → rename branch
-[ ] PR title has ticket ID?   NO → fix format (single ticket per title)
+[ ] Ticket exists?                    NO → create the ticket FIRST
+[ ] Ticket has AC?                    NO → add acceptance criteria
+[ ] Branch has ticket ID?             NO → rename branch
+[ ] PR title has ticket ID?           NO → fix format (single ticket per title)
+[ ] Body uses `Refs #N` (not Closes)? NO → switch (route through QA), OR apply
+                                            exempt label to the issue first
+                                            (chore/docs/spike/infra/qa-bypass)
 ```
+
+`Closes #N` (and synonyms `Fixes` / `Resolves`) is blocked at PR-create time by `block-closes-without-exempt-label.sh` when the linked issue lacks an exempt label. See `.claude/rules/git-conventions.md` § "Issue references — `Refs` vs `Closes`".
 
 ## After `gh pr create`
 
@@ -130,6 +135,28 @@ All three merge-gate hooks (`block-unreviewed-merge.sh`, `block-merge-on-red-ci.
 Historically only the first shape was matched. In April 2026 (incident: `me2resh/curios-dog#190` was merged via `gh api` while CI was still running), the second shape was discovered as a silent bypass and closed in [#47](https://github.com/me2resh/apexyard/issues/47). Both the matcher entries in `.claude/settings.json` and the PR-number extraction in each hook (`.claude/hooks/_lib-extract-pr.sh`) now recognise both shapes. Invoking either triggers the gate — there is no supported merge path that skips the two-reviews rule.
 
 Using `gh api .../merge` as a workaround for other issues (e.g. cross-repo resolution, hook flakiness) is itself a rule violation on par with forging an approval marker. If a gate is mis-firing, fix the gate.
+
+## After Merge — QA Gate (HARD STOP)
+
+A merged PR does NOT auto-close the linked issue (you used `Refs #N`, not `Closes`). After merge, the chain is:
+
+```
+1. golden-paths/pipelines/move-to-qa-on-merge.yml fires (server-side):
+   parses PR body for `Refs #N` → applies `qa` label to each linked issue.
+2. Next session that runs gh against the labeled issue:
+   detect-role-trigger.sh emits the activation banner for Salim
+   (QA Engineer, roles/engineering/qa-engineer.md).
+3. Salim verifies every AC + edge cases + regression check.
+4. On pass:  gh issue edit <N> --add-label qa-passed && gh issue close <N>
+   On fail:  file [Bug] via /bug, leave original ticket in `qa` state.
+```
+
+The close is gated by:
+
+- Client-side: `block-issue-close-without-qa-passed.sh` rejects `gh issue close` / `--state closed` / `gh api ... state=closed` if `qa-passed` and exempt labels are both absent.
+- Server-side: `golden-paths/pipelines/qa-gate.yml` reopens any issue closed without `qa-passed` (or exempt label) — catches web UI / direct-API closes.
+
+See `.claude/rules/workflow-gates.md` § "QA State is Mandatory" for the table mapping each transition to the hook/workflow enforcing it.
 
 ## After Pushing Commits to an Open PR
 

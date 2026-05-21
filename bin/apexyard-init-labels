@@ -1,0 +1,94 @@
+#!/bin/bash
+# apexyard-init-labels — seed the canonical apexyard label set on a target
+# GitHub repo. Idempotent: re-running produces no changes for existing
+# labels (color/description left as-is).
+#
+# Usage:
+#   bin/apexyard-init-labels <owner/repo>            # one repo
+#   bin/apexyard-init-labels --all                   # every project in
+#                                                    # apexyard.projects.yaml
+#
+# The label set drives the QA-chain hooks + workflows. Adopters running on a
+# managed project for the first time should run this once after registry
+# entry. /handover offers it as a follow-up step (out of scope for v1).
+
+set -e
+
+if [ $# -lt 1 ]; then
+  cat >&2 <<USAGE
+usage: $(basename "$0") <owner/repo>
+       $(basename "$0") --all
+
+Seeds the canonical apexyard label set used by the QA-chain hooks and
+golden-paths workflows. Re-running is a no-op for labels that already exist.
+USAGE
+  exit 2
+fi
+
+# Label definitions: name|color|description
+LABELS=(
+  "qa|fbca04|QA state — ticket awaiting Salim's verification"
+  "qa-passed|0e8a16|Salim verified every AC; ticket can close"
+  "qa-bypass|6f42c1|Catch-all exemption; bypasses QA gate (use sparingly)"
+  "chore|cccccc|Infrastructure / tooling / config; no user-facing AC; QA-exempt"
+  "docs|0075ca|Documentation only; QA-exempt"
+  "spike|d4c5f9|Hypothesis-driven, time-boxed exploration; QA-exempt"
+  "infra|c5def5|Infra-class work (CI / deploy / monitoring); QA-exempt"
+  "bug|d73a4a|Something isn't working"
+  "feature|a2eeef|New user-facing feature; routes through QA"
+)
+
+seed_repo() {
+  local repo="$1"
+  echo "→ ${repo}"
+  for entry in "${LABELS[@]}"; do
+    local name color desc
+    name=$(echo "$entry" | cut -d'|' -f1)
+    color=$(echo "$entry" | cut -d'|' -f2)
+    desc=$(echo "$entry" | cut -d'|' -f3)
+
+    # `gh label create --force` overwrites; we want idempotent, so check first.
+    if gh label list --repo "$repo" --json name --jq '.[].name' 2>/dev/null \
+        | grep -qE "^${name}$"; then
+      printf '  = %-12s (exists, leaving as-is)\n' "$name"
+      continue
+    fi
+
+    if gh label create "$name" --repo "$repo" --color "$color" --description "$desc" >/dev/null 2>&1; then
+      printf '  + %-12s created\n' "$name"
+    else
+      printf '  ! %-12s create failed\n' "$name" >&2
+    fi
+  done
+}
+
+if [ "$1" = "--all" ]; then
+  # Resolve registry path via the portfolio helper.
+  REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+  if [ -f "$REPO_ROOT/.claude/hooks/_lib-portfolio-paths.sh" ]; then
+    # shellcheck disable=SC1090,SC1091
+    . "$REPO_ROOT/.claude/hooks/_lib-read-config.sh"
+    # shellcheck disable=SC1090,SC1091
+    . "$REPO_ROOT/.claude/hooks/_lib-portfolio-paths.sh"
+    REGISTRY=$(portfolio_registry)
+  else
+    REGISTRY="$REPO_ROOT/apexyard.projects.yaml"
+  fi
+  if [ ! -f "$REGISTRY" ]; then
+    echo "registry not found at $REGISTRY" >&2
+    exit 2
+  fi
+  if command -v yq >/dev/null 2>&1; then
+    repos=$(yq eval '.projects[].repo' "$REGISTRY")
+  else
+    repos=$(awk '/^[[:space:]]*repo:/ {sub(/^[[:space:]]*repo:[[:space:]]*/,""); gsub(/["\x27]/,""); print}' "$REGISTRY")
+  fi
+  for r in $repos; do
+    [ -z "$r" ] && continue
+    seed_repo "$r"
+  done
+else
+  seed_repo "$1"
+fi
+
+echo "done."

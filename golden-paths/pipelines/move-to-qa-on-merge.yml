@@ -1,0 +1,63 @@
+# Move-to-QA on PR merge
+# Copy this to .github/workflows/move-to-qa-on-merge.yml in your project.
+#
+# Purpose: when a PR is merged, parse its body for `Refs #N` references
+# and apply the `qa` label to each linked issue. The label change activates
+# Salim (QA Engineer) per .claude/rules/role-triggers.md.
+#
+# Pairs with:
+#   - block-closes-without-exempt-label.sh (rejects auto-close on non-exempt issues)
+#   - qa-gate.yml (server-side safety net on issue close)
+#
+# Prerequisites:
+#   - Labels exist: `qa` (and the closing label `qa-passed`).
+#     Run bin/apexyard-init-labels <owner/repo> to seed them.
+
+name: Move to QA on Merge
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  issues: write
+  pull-requests: read
+
+jobs:
+  label-linked-issues-qa:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply `qa` label to Refs #N
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+
+            // Match `Refs #123` (case-insensitive). Same-repo only for v1;
+            // cross-repo `<owner>/<repo>#N` is out of scope (it'd require
+            // a cross-repo issue-label call with extra perms).
+            const re = /\brefs\s*[:#-]?\s*#(\d+)\b/gi;
+            const seen = new Set();
+            for (const m of body.matchAll(re)) {
+              seen.add(parseInt(m[1], 10));
+            }
+
+            if (seen.size === 0) {
+              core.info('No `Refs #N` references in PR body — nothing to label.');
+              return;
+            }
+
+            for (const num of seen) {
+              try {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                  labels: ['qa'],
+                });
+                core.info(`Applied 'qa' label to #${num}`);
+              } catch (e) {
+                core.warning(`Failed to label #${num}: ${e.message}`);
+              }
+            }

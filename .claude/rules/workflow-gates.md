@@ -98,11 +98,28 @@ Any one match exempts the gate; otherwise the production rule applies. See `.cla
 
 ## QA State is Mandatory
 
-A merged PR moves the ticket to **QA** state, **not** Done. A QA Engineer manually verifies the acceptance criteria, then moves the ticket to Done.
+A merged PR moves the ticket to **QA** state, **not** Done. A QA Engineer (Salim) manually verifies the acceptance criteria, applies the `qa-passed` label, then closes the ticket.
 
 ```
-In Progress → In Review → QA → Done
-                          ^
-                    MANDATORY STOP
-                    QA must verify
+In Progress → In Review → QA → qa-passed → Done
+                          ^         ^
+                          │         └─ Salim's verification label
+                          │            (or one of: chore | docs | spike | infra | qa-bypass)
+                          MANDATORY STOP
+                          QA must verify
 ```
+
+**MECHANICALLY ENFORCED** by four pieces working together:
+
+| Layer | Mechanism | Catches |
+|-------|-----------|---------|
+| Client-side, PR creation | `.claude/hooks/block-closes-without-exempt-label.sh` | `gh pr create` with `Closes #N` (or synonym) on a non-exempt issue → BLOCK; forces author to switch to `Refs #N` or apply an exempt label |
+| Client-side, issue close | `.claude/hooks/block-issue-close-without-qa-passed.sh` | `gh issue close`, `gh issue edit --state closed`, `gh api .../issues/N` with `state=closed` → BLOCK unless issue has `qa-passed` OR an exempt label |
+| Server-side, post-merge routing | `golden-paths/pipelines/move-to-qa-on-merge.yml` | Parses merged PR body for `Refs #N`, applies `qa` label to each linked issue → activates Salim per role-triggers.md |
+| Server-side, close safety net | `golden-paths/pipelines/qa-gate.yml` | On `issues.closed` event (any source — CLI, web UI, GitHub auto-close), reopens the issue if no `qa-passed` and no exempt label |
+
+The client-side hooks give fast feedback in the operator's terminal; the server-side workflows are the can't-be-bypassed floor (web UI, direct API, mobile app, etc.). Defense in depth — both layers must agree before a ticket can close without QA.
+
+Exempt-label set + verified-label name are configurable in `.claude/project-config.json` under `.qa.*`.
+
+See `docs/agdr/AgDR-0031-qa-chain-mechanization.md` for the design rationale.

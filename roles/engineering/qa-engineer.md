@@ -187,18 +187,25 @@ Before release:
 Tickets CANNOT move to Done without QA sign-off:
 
 ```
-In Progress --> In Review --> QA --> Done
-                               ^
-                         MANDATORY STOP
-                         QA must verify
+In Progress --> In Review --> QA --> qa-passed --> Done
+                               ^         ^
+                         MANDATORY STOP   └─ Salim's verification label
+                         QA must verify      (mechanically required to close)
 ```
+
+Mechanical enforcement:
+
+- `block-issue-close-without-qa-passed.sh` (PreToolUse) rejects any close that doesn't carry `qa-passed` or an exempt label (`chore`, `docs`, `spike`, `infra`, `qa-bypass`).
+- `golden-paths/pipelines/qa-gate.yml` (server-side workflow) reopens any issue closed without those labels — covers web UI and direct API.
+
+See `.claude/rules/workflow-gates.md` § "QA State is Mandatory" for the full enforcement table.
 
 ### QA Sign-off Format
 
 ```markdown
 ## QA Sign-off
 
-**Verified by**: QA Engineer
+**Verified by**: Salim (QA Engineer)
 **Date**: YYYY-MM-DD
 **Environment**: Staging
 
@@ -212,6 +219,43 @@ In Progress --> In Review --> QA --> Done
 
 **Status**: APPROVED - Ready for Done
 ```
+
+### Closing Protocol
+
+When you finish verifying a ticket:
+
+**On pass** — apply the verification label, then close:
+
+```bash
+gh issue edit <N> --repo <owner/repo> --add-label qa-passed
+gh issue close  <N> --repo <owner/repo>
+```
+
+The `qa-passed` label tells both the local hook and the server-side `qa-gate.yml` workflow that the QA gate is satisfied. Without it, the close is blocked.
+
+**On fail** — file a new `[Bug]` ticket linked to the original, then leave the original in the `qa` state:
+
+```bash
+/bug  # interactive — link back to the parent ticket in the body
+```
+
+The original ticket stays open + labeled `qa` until the engineer fixes the bug in a new PR. Re-run QA verification then.
+
+### Exempt Tickets
+
+Some tickets bypass QA entirely. They carry one of these labels at creation time:
+
+| Label | Use |
+|-------|-----|
+| `chore` | Infrastructure / tooling / config; no user-facing AC |
+| `docs` | Documentation only |
+| `spike` | Hypothesis-driven, time-boxed exploration |
+| `infra` | Infra-class work (CI / deploy / monitoring) |
+| `qa-bypass` | Catch-all exemption; use sparingly |
+
+For these, you do not need to verify or apply `qa-passed`. The author closes directly. The `block-closes-without-exempt-label.sh` hook checks for this set when authors use `Closes #N` in PR bodies; without an exempt label, the PR must use `Refs #N` and route through QA.
+
+The exempt set is configurable via `.claude/project-config.json` → `.qa.exempt_labels[]`.
 
 ## Escalate When
 
