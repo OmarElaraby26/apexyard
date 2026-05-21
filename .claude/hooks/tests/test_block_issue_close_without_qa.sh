@@ -121,6 +121,49 @@ run_case "gh api repos/o/r/issues/42 -f state=closed (no labels) → BLOCK" \
 run_case "gh api repos/o/r/issues/42 -f state=closed (qa-passed) → ALLOW" \
   "gh api repos/o/r/issues/42 -X PATCH -f state=closed" "qa-passed" 0
 
+# Regression: --add-label qa-passed-but-not-really must NOT match
+# (was a word-boundary bypass — qa-passed-suffix could trick the atomic
+# verify+close detection)
+run_case "atomic-close regex must NOT match qa-passed-but-not-really → BLOCK" \
+  "gh issue close 42 --add-label qa-passed-but-not-really" "" 2
+run_case "atomic-close regex still matches qa-passed exact → ALLOW" \
+  "gh issue close 42 --add-label qa-passed" "" 0
+run_case "atomic-close regex matches qa-passed,chore (label list) → ALLOW" \
+  "gh issue close 42 --add-label qa-passed,chore" "" 0
+
+# Regression: multi-number `gh issue edit N1 N2 N3 --state closed` must
+# check EVERY number, not just the first. Need a custom test runner that
+# sets labels on multiple issues.
+run_multi_case() {
+  local desc="$1" cmd="$2" labels_42="$3" labels_43="$4" expect_exit="$5"
+  local sb
+  sb=$(make_sandbox)
+  [ -n "$labels_42" ] && echo "42 $labels_42" >> "$sb/.mock-gh-labels"
+  [ -n "$labels_43" ] && echo "43 $labels_43" >> "$sb/.mock-gh-labels"
+  local input
+  input=$(jq -n --arg cmd "$cmd" '{tool_input: {command: $cmd}}')
+  local saved_path="$PATH"
+  PATH="$sb/bin:$PATH"
+  local exit_code=0
+  (cd "$sb" && echo "$input" | bash .claude/hooks/block-issue-close-without-qa-passed.sh) >/dev/null 2>&1 || exit_code=$?
+  PATH="$saved_path"
+  if [ "$exit_code" = "$expect_exit" ]; then
+    PASS=$((PASS+1))
+    printf '  PASS: %s (exit=%s)\n' "$desc" "$exit_code"
+  else
+    FAIL=$((FAIL+1))
+    FAILED="${FAILED}    - ${desc} (expected ${expect_exit}, got ${exit_code})\n"
+    printf '  FAIL: %s (expected exit=%s, got %s)\n' "$desc" "$expect_exit" "$exit_code"
+  fi
+  rm -rf "$sb"
+}
+run_multi_case "multi-num edit — 42=qa-passed, 43=none → BLOCK on 43" \
+  "gh issue edit 42 43 --state closed" "qa-passed" "" 2
+run_multi_case "multi-num edit — both qa-passed → ALLOW" \
+  "gh issue edit 42 43 --state closed" "qa-passed" "qa-passed" 0
+run_multi_case "multi-num edit — 42=chore, 43=qa-passed → ALLOW (mixed exempt+verified)" \
+  "gh issue edit 42 43 --state closed" "chore" "qa-passed" 0
+
 # Unrelated commands → no-op
 run_case "gh issue view 42 → no-op (not a close)" \
   "gh issue view 42" "" 0

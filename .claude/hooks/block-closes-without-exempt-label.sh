@@ -172,6 +172,6 @@ The exempt set is configurable in .claude/project-config.json:
   .qa.exempt_labels[]       — overrides the default list
   .qa.autoclose_keywords[]  — overrides the default keyword set
 
-See AgDR for the design rationale (docs/agdr/AgDR-NNNN-qa-chain-mechanization.md).
+See AgDR for the design rationale (docs/agdr/AgDR-0031-qa-chain-mechanization.md).
 MSG
 exit 2

@@ -49,7 +49,13 @@ if echo "$COMMAND" | grep -qE '\bgh\s+issue\s+close\b'; then
     | tr '\n' ' ')
 fi
 if [ -z "$NUMS" ] && echo "$COMMAND" | grep -qE '\bgh\s+issue\s+edit\b'; then
-  NUMS=$(echo "$COMMAND" | sed -nE 's/.*\bgh\s+issue\s+edit\s+([0-9]+).*/\1/p' | head -1)
+  # All positional args after `edit` and before any -- or --flag.
+  # Matches the multi-number shape `gh issue edit N1 N2 N3 --state closed`.
+  NUMS=$(echo "$COMMAND" \
+    | sed -E 's/.*\bgh\s+issue\s+edit\b//' \
+    | grep -oE '^[[:space:]]+([0-9]+([[:space:]]+[0-9]+)*)' \
+    | grep -oE '[0-9]+' \
+    | tr '\n' ' ')
 fi
 if [ -z "$NUMS" ]; then
   NUMS=$(echo "$COMMAND" | grep -oE 'repos/[^/[:space:]]+/[^/[:space:]]+/issues/[0-9]+' | grep -oE '[0-9]+$')
@@ -74,11 +80,14 @@ if [ -z "$CMD_REPO" ]; then
 fi
 
 # Detect atomic "verify + close" — same command applies qa-passed.
+# Use an explicit non-suffix terminator after `qa-passed` so labels like
+# `qa-passed-but-not-really` or `qa-passed-prod` do NOT match. The terminator
+# is end-of-string, whitespace, comma (label list separator), or quote.
 SAME_COMMAND_PASS=0
-if echo "$COMMAND" | grep -qE -- '--add-label[[:space:]=]+[^[:space:]]*\bqa-passed\b'; then
+if echo "$COMMAND" | grep -qE -- '--add-label[[:space:]=]+([^[:space:]]+,)?qa-passed([[:space:],"'"'"']|$)'; then
   SAME_COMMAND_PASS=1
 fi
-if echo "$COMMAND" | grep -qE '(-f|--field|--raw-field)[[:space:]]+labels\[\]=qa-passed'; then
+if echo "$COMMAND" | grep -qE '(-f|--field|--raw-field)[[:space:]]+labels\[\]=qa-passed([[:space:]"'"'"']|$)'; then
   SAME_COMMAND_PASS=1
 fi
 
@@ -153,6 +162,6 @@ To unblock:
 The exempt set is configurable in .claude/project-config.json:
   .qa.exempt_labels[]
 
-See AgDR for the design rationale (docs/agdr/AgDR-NNNN-qa-chain-mechanization.md).
+See AgDR for the design rationale (docs/agdr/AgDR-0031-qa-chain-mechanization.md).
 MSG
 exit 2
