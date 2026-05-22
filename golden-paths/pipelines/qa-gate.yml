@@ -11,11 +11,11 @@
 # (Hook is local enforcement — fast feedback; this workflow is the
 # can't-be-bypassed server-side floor.)
 #
-# Exempt labels (allow close): chore | docs | spike | infra | qa-bypass
+# Exempt labels (allow close): qa-bypass (only)
 # Verification label (allow close): qa-passed
 #
 # Configure the label sets via repository variables if you need to deviate:
-#   QA_EXEMPT_LABELS=chore,docs,spike,infra,qa-bypass
+#   QA_EXEMPT_LABELS=qa-bypass
 #   QA_VERIFIED_LABEL=qa-passed
 
 name: QA Gate
@@ -39,7 +39,7 @@ jobs:
             const labels = (issue.labels || []).map(l => l.name);
 
             const exempt = (process.env.QA_EXEMPT_LABELS
-              || 'chore,docs,spike,infra,qa-bypass').split(',').map(s => s.trim());
+              || 'qa-bypass').split(',').map(s => s.trim());
             const verified = (process.env.QA_VERIFIED_LABEL || 'qa-passed').trim();
 
             if (labels.includes(verified)) {

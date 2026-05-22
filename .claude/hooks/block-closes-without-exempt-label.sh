@@ -84,7 +84,7 @@ if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/.claude/hooks/_lib-read-config.sh" ];
   KEYWORDS=$(config_get '.qa.autoclose_keywords[]' 2>/dev/null | tr '\n' '|' | sed 's/|$//')
 fi
 if [ -z "$EXEMPT_LABELS" ]; then
-  EXEMPT_LABELS="chore|docs|spike|infra|qa-bypass"
+  EXEMPT_LABELS="qa-bypass"
 fi
 if [ -z "$KEYWORDS" ]; then
   KEYWORDS="Closes|Fixes|Resolves|Close|Fix|Resolve|Closed|Fixed|Resolved"

@@ -43,17 +43,15 @@ Refs #123
 
 `Refs #N` is the **default** issue reference for any PR or commit that touches a ticket. It links the PR to the issue WITHOUT auto-closing it on merge, which routes the ticket through the mandatory QA gate (workflows/sdlc.md § Phase 5 — Salim verifies every AC, applies `qa-passed`, then closes).
 
-`Closes #N` / `Fixes #N` / `Resolves #N` are auto-close keywords — GitHub closes the linked issue automatically when the PR merges. **Reserved for issues that carry an exempt label**:
+`Closes #N` / `Fixes #N` / `Resolves #N` are auto-close keywords — GitHub closes the linked issue automatically when the PR merges. **Reserved for issues that carry the `qa-bypass` label** — the ONE exempt label permitted under the narrow default:
 
 | Label | Use |
 |-------|-----|
-| `chore` | Infrastructure / tooling / config; no user-facing AC |
-| `docs` | Documentation only |
-| `spike` | Hypothesis-driven, time-boxed exploration |
-| `infra` | Infra-class work (CI / deploy / monitoring) |
-| `qa-bypass` | Catch-all exemption; use sparingly |
+| `qa-bypass` | Deliberate, per-ticket explicit exemption. Operator consciously applies it. Use sparingly. |
 
-If an issue does NOT carry one of those labels and your PR uses `Closes` (or a synonym), the PR-create gate `block-closes-without-exempt-label.sh` blocks the operation. Switch to `Refs #N` (preferred) OR apply an exempt label to the issue first.
+Every other class of work — chores, docs, spikes, infra, features, bugs — must use `Refs #N` and flow through QA. The narrow exempt set was locked in by AgDR-0032 because class-of-work auto-exemption (the previous five-label set) caused silent bypass when chores merged without ever reaching Salim.
+
+If an issue does NOT carry `qa-bypass` and your PR uses `Closes` (or a synonym), the PR-create gate `block-closes-without-exempt-label.sh` blocks the operation. Switch to `Refs #N` (preferred) OR apply `qa-bypass` to the issue first if the bypass is genuinely warranted.
 
 The exempt set and keyword list are configurable in `.claude/project-config.json`:
 
