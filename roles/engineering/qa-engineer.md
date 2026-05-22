@@ -195,7 +195,7 @@ In Progress --> In Review --> QA --> qa-passed --> Done
 
 Mechanical enforcement:
 
-- `block-issue-close-without-qa-passed.sh` (PreToolUse) rejects any close that doesn't carry `qa-passed` or an exempt label (`chore`, `docs`, `spike`, `infra`, `qa-bypass`).
+- `block-issue-close-without-qa-passed.sh` (PreToolUse) rejects any close that doesn't carry `qa-passed` or the sole exempt label `qa-bypass` (deliberate per-ticket escape valve; the broader exempt set was narrowed in AgDR-0032).
 - `golden-paths/pipelines/qa-gate.yml` (server-side workflow) reopens any issue closed without those labels — covers web UI and direct API.
 
 See `.claude/rules/workflow-gates.md` § "QA State is Mandatory" for the full enforcement table.
@@ -243,19 +243,15 @@ The original ticket stays open + labeled `qa` until the engineer fixes the bug i
 
 ### Exempt Tickets
 
-Some tickets bypass QA entirely. They carry one of these labels at creation time:
+Only ONE label bypasses QA — a deliberate, per-ticket escape valve:
 
 | Label | Use |
 |-------|-----|
-| `chore` | Infrastructure / tooling / config; no user-facing AC |
-| `docs` | Documentation only |
-| `spike` | Hypothesis-driven, time-boxed exploration |
-| `infra` | Infra-class work (CI / deploy / monitoring) |
-| `qa-bypass` | Catch-all exemption; use sparingly |
+| `qa-bypass` | One-off explicit exemption. Operator must consciously apply it per-ticket. Use sparingly. |
 
-For these, you do not need to verify or apply `qa-passed`. The author closes directly. The `block-closes-without-exempt-label.sh` hook checks for this set when authors use `Closes #N` in PR bodies; without an exempt label, the PR must use `Refs #N` and route through QA.
+For `qa-bypass` tickets, you do not verify or apply `qa-passed`. The author closes directly. Every other class of work — chores, docs, spikes, infra changes, features, bugs — flows through QA. The `block-closes-without-exempt-label.sh` hook checks for `qa-bypass` when authors use `Closes #N` in PR bodies; without it, the PR must use `Refs #N` and route through QA.
 
-The exempt set is configurable via `.claude/project-config.json` → `.qa.exempt_labels[]`.
+The exempt set is configurable via `.claude/project-config.json` → `.qa.exempt_labels[]`. The narrow default (`["qa-bypass"]` only) is locked in by AgDR-0032; widening the set in a per-project override should itself be a documented, time-bounded decision.
 
 ## Escalate When
 

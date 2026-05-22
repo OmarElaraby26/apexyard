@@ -102,11 +102,19 @@ run_case "gh issue close 42 (no labels) → BLOCK" \
   "gh issue close 42" "" 2
 run_case "gh issue close 42 (qa-passed) → ALLOW" \
   "gh issue close 42" "qa-passed" 0
-run_case "gh issue close 42 (chore exempt) → ALLOW" \
-  "gh issue close 42" "chore" 0
-run_case "gh issue close 42 (qa-bypass exempt) → ALLOW" \
+# Narrow exempt set (AgDR-0032): qa-bypass is the ONLY exempt label.
+# chore / docs / spike / infra are NO LONGER exempt — they BLOCK without qa-passed.
+run_case "gh issue close 42 (chore — no longer exempt) → BLOCK" \
+  "gh issue close 42" "chore" 2
+run_case "gh issue close 42 (docs — no longer exempt) → BLOCK" \
+  "gh issue close 42" "docs" 2
+run_case "gh issue close 42 (spike — no longer exempt) → BLOCK" \
+  "gh issue close 42" "spike" 2
+run_case "gh issue close 42 (infra — no longer exempt) → BLOCK" \
+  "gh issue close 42" "infra" 2
+run_case "gh issue close 42 (qa-bypass — sole exempt) → ALLOW" \
   "gh issue close 42" "qa-bypass" 0
-run_case "gh issue close 42 (feature, not exempt) → BLOCK" \
+run_case "gh issue close 42 (feature, never exempt) → BLOCK" \
   "gh issue close 42" "feature" 2
 
 # gh issue edit <N> --state closed
@@ -161,8 +169,10 @@ run_multi_case "multi-num edit — 42=qa-passed, 43=none → BLOCK on 43" \
   "gh issue edit 42 43 --state closed" "qa-passed" "" 2
 run_multi_case "multi-num edit — both qa-passed → ALLOW" \
   "gh issue edit 42 43 --state closed" "qa-passed" "qa-passed" 0
-run_multi_case "multi-num edit — 42=chore, 43=qa-passed → ALLOW (mixed exempt+verified)" \
-  "gh issue edit 42 43 --state closed" "chore" "qa-passed" 0
+run_multi_case "multi-num edit — 42=qa-bypass, 43=qa-passed → ALLOW (mixed exempt+verified)" \
+  "gh issue edit 42 43 --state closed" "qa-bypass" "qa-passed" 0
+run_multi_case "multi-num edit — 42=chore (no longer exempt), 43=qa-passed → BLOCK on 42" \
+  "gh issue edit 42 43 --state closed" "chore" "qa-passed" 2
 
 # Unrelated commands → no-op
 run_case "gh issue view 42 → no-op (not a close)" \
