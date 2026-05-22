@@ -185,10 +185,6 @@
   },
   "qa": {
     "exempt_labels": [
-      "chore",
-      "docs",
-      "spike",
-      "infra",
       "qa-bypass"
     ],
     "autoclose_keywords": [

@@ -104,7 +104,7 @@ A merged PR moves the ticket to **QA** state, **not** Done. A QA Engineer (Salim
 In Progress → In Review → QA → qa-passed → Done
                           ^         ^
                           │         └─ Salim's verification label
-                          │            (or one of: chore | docs | spike | infra | qa-bypass)
+                          │            (or `qa-bypass` — deliberate per-ticket escape valve)
                           MANDATORY STOP
                           QA must verify
 ```

@@ -114,13 +114,14 @@ run_case() {
 
 echo "block-closes-without-exempt-label.sh tests"
 echo "---"
-# Case: Closes on non-exempt issue → BLOCK
+# Narrow exempt set: qa-bypass is the ONLY exempt label (AgDR-0032).
+# chore / docs / spike / infra used to be exempt under AgDR-0031; they
+# now flow through QA like everything else.
+
+# Case: Closes on issue with no labels → BLOCK
 run_case "Closes #42 on issue with no labels → BLOCK" \
   "Closes #42" "" 2
-# Case: Closes on chore-labeled issue → ALLOW
-run_case "Closes #42 on chore-labeled issue → ALLOW" \
-  "Closes #42" "chore" 0
-# Case: Refs (no Closes) → ALLOW
+# Case: Refs (no Closes) → ALLOW (no autoclose form)
 run_case "Refs #42 on non-exempt → ALLOW (no autoclose keyword)" \
   "Refs #42" "" 0
 # Case: Fixes synonym → BLOCK
@@ -129,13 +130,23 @@ run_case "Fixes #42 on non-exempt → BLOCK" \
 # Case: Resolves synonym → BLOCK
 run_case "Resolves #42 on non-exempt → BLOCK" \
   "Resolves #42" "" 2
-# Case: spike-labeled → ALLOW
-run_case "Closes #42 on spike-labeled → ALLOW" \
-  "Closes #42" "spike" 0
-# Case: qa-bypass-labeled → ALLOW
-run_case "Closes #42 on qa-bypass-labeled → ALLOW" \
+
+# Narrow-set regressions (post AgDR-0032): chore / docs / spike / infra
+# are NO LONGER exempt and must BLOCK.
+run_case "Closes #42 on chore-labeled → BLOCK (chore no longer exempt)" \
+  "Closes #42" "chore" 2
+run_case "Closes #42 on docs-labeled → BLOCK (docs no longer exempt)" \
+  "Closes #42" "docs" 2
+run_case "Closes #42 on spike-labeled → BLOCK (spike no longer exempt)" \
+  "Closes #42" "spike" 2
+run_case "Closes #42 on infra-labeled → BLOCK (infra no longer exempt)" \
+  "Closes #42" "infra" 2
+
+# qa-bypass remains the sole exempt label.
+run_case "Closes #42 on qa-bypass-labeled → ALLOW (sole exempt label)" \
   "Closes #42" "qa-bypass" 0
-# Case: feature-labeled (not exempt) → BLOCK
+
+# Case: feature-labeled (never exempt) → BLOCK
 run_case "Closes #42 on feature-labeled → BLOCK" \
   "Closes #42" "feature" 2
 

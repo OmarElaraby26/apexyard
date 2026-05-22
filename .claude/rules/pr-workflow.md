@@ -43,7 +43,8 @@ Also check before pushing:
 [ ] PR title has ticket ID?           NO → fix format (single ticket per title)
 [ ] Body uses `Refs #N` (not Closes)? NO → switch (route through QA), OR apply
                                             exempt label to the issue first
-                                            (chore/docs/spike/infra/qa-bypass)
+                                            (qa-bypass — deliberate per-ticket
+                                             escape valve, narrow on purpose)
 ```
 
 `Closes #N` (and synonyms `Fixes` / `Resolves`) is blocked at PR-create time by `block-closes-without-exempt-label.sh` when the linked issue lacks an exempt label. See `.claude/rules/git-conventions.md` § "Issue references — `Refs` vs `Closes`".

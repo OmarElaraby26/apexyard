@@ -11,11 +11,11 @@
 # (Hook is local enforcement — fast feedback; this workflow is the
 # can't-be-bypassed server-side floor.)
 #
-# Exempt labels (allow close): chore | docs | spike | infra | qa-bypass
+# Exempt labels (allow close): qa-bypass (only)
 # Verification label (allow close): qa-passed
 #
 # Configure the label sets via repository variables if you need to deviate:
-#   QA_EXEMPT_LABELS=chore,docs,spike,infra,qa-bypass
+#   QA_EXEMPT_LABELS=qa-bypass
 #   QA_VERIFIED_LABEL=qa-passed
 
 name: QA Gate
@@ -39,7 +39,7 @@ jobs:
             const labels = (issue.labels || []).map(l => l.name);
 
             const exempt = (process.env.QA_EXEMPT_LABELS
-              || 'chore,docs,spike,infra,qa-bypass').split(',').map(s => s.trim());
+              || 'qa-bypass').split(',').map(s => s.trim());
             const verified = (process.env.QA_VERIFIED_LABEL || 'qa-passed').trim();
 
             if (labels.includes(verified)) {
@@ -66,13 +66,13 @@ jobs:
               ``,
               `This issue was closed by @${closer} but the QA gate is not satisfied:`,
               `  - no \`qa-passed\` label (Salim has not verified the acceptance criteria), AND`,
-              `  - no exempt label (chore / docs / spike / infra / qa-bypass).`,
+              `  - no \`qa-bypass\` label (the sole class-level exempt under the narrow default).`,
               ``,
               `Two paths to close:`,
               `  1. Have Salim verify the ticket. On pass, apply \`qa-passed\` then close.`,
-              `  2. If this is genuinely infra-class with no user-facing AC, apply an exempt label first (e.g. \`chore\`).`,
+              `  2. For deliberate one-off exceptions (legal hotfix, framework self-bootstrap, broken-fork sync), apply \`qa-bypass\` first. Use sparingly — every applied \`qa-bypass\` is auditable in label history.`,
               ``,
-              `See \`workflows/sdlc.md\` § Phase 5 and \`.claude/rules/workflow-gates.md\` § "QA State is Mandatory".`,
+              `See \`workflows/sdlc.md\` § Phase 5 and \`.claude/rules/workflow-gates.md\` § "QA State is Mandatory". Design rationale: AgDR-0031 + AgDR-0032.`,
             ].join('\n');
 
             await github.rest.issues.createComment({
