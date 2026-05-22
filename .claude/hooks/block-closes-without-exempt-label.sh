@@ -8,7 +8,8 @@
 # and bypassing Salim (QA Engineer).
 #
 # Exempt labels (allow auto-close):
-#   - chore | docs | spike | infra | qa-bypass
+#   - qa-bypass (narrow default — AgDR-0032)
+# Per-project override via .claude/project-config.json `.qa.exempt_labels[]`.
 #
 # Exit codes:
 #   0 = allowed (no auto-close keyword, every referenced issue is exempt,
@@ -159,19 +160,20 @@ Two ways to unblock:
      activates Salim per role-triggers.md. Salim verifies AC, applies
      'qa-passed', then closes.
 
-  2. Apply an exempt label to the issue, then retry:
-     For infra-class chores with no user-facing AC:
-       gh issue edit ${BLOCKERS} --repo ${TARGET_REPO} --add-label chore
+  2. Apply 'qa-bypass' to the issue, then retry:
+       gh issue edit ${BLOCKERS} --repo ${TARGET_REPO} --add-label qa-bypass
 
-     Exempt labels (any one is enough): chore, docs, spike, infra, qa-bypass
-
-     'qa-bypass' is the catch-all for one-off exceptions (legal-mandated
-     hotfix, broken-fork sync, etc.). Use sparingly.
+     'qa-bypass' is the SOLE exempt label under the narrow default
+     (AgDR-0032). Use only for legitimate one-off exceptions —
+     legal-mandated hotfix, framework self-bootstrap, broken-fork sync.
+     Use sparingly; every applied 'qa-bypass' is auditable in label history.
 
 The exempt set is configurable in .claude/project-config.json:
-  .qa.exempt_labels[]       — overrides the default list
+  .qa.exempt_labels[]       — overrides the default list (narrow: ["qa-bypass"])
   .qa.autoclose_keywords[]  — overrides the default keyword set
 
-See AgDR for the design rationale (docs/agdr/AgDR-0031-qa-chain-mechanization.md).
+See AgDR for the design rationale:
+  docs/agdr/AgDR-0031-qa-chain-mechanization.md          (original chain)
+  docs/agdr/AgDR-0032-narrow-qa-exempt-to-qa-bypass-only.md (narrow exempt set)
 MSG
 exit 2

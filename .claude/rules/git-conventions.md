@@ -58,6 +58,8 @@ The exempt set and keyword list are configurable in `.claude/project-config.json
 - `.qa.exempt_labels[]` — labels that allow auto-close
 - `.qa.autoclose_keywords[]` — keywords that trigger the gate
 
+**Per-project override discipline**: the narrow default (`["qa-bypass"]` only) is the prescribed baseline. Widening the exempt set via override should be a documented, time-bounded decision — record it in an AgDR on the adopting project, name the labels added, name the trigger that would close the override. The default exists because class-of-work auto-exemption produced silent QA bypass; per-project widening reintroduces that risk and should not be casual.
+
 ## File Staging
 
 **NEVER** use `git add -A`, `git add .`, or `git add --all`. Always add specific files:

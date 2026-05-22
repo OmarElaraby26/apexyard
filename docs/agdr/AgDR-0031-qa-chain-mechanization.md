@@ -87,6 +87,8 @@ Vocabulary:
 - `qa-passed` — applied by Salim after verification; required to close (or have an exempt label)
 - `chore`, `docs`, `spike`, `infra`, `qa-bypass` — exempt labels (allow auto-close + allow close without `qa-passed`)
 
+> **Superseded by [AgDR-0032](AgDR-0032-narrow-qa-exempt-to-qa-bypass-only.md)**: the 5-label class-of-work exempt set caused silent QA bypass on chores. The exempt set was narrowed to `["qa-bypass"]` only — `qa-bypass` is now the sole class-level exempt, applied per-ticket as a deliberate escape valve. Everything else in this AgDR (the four-piece chain, the `qa-passed` semantic, the `Refs`/`Closes` rule) remains in force.
+
 Config knobs in `.claude/project-config.defaults.json` under `.qa.*`:
 
 - `exempt_labels[]` — defaults to `[chore, docs, spike, infra, qa-bypass]`

@@ -141,8 +141,8 @@ ApexYard QA gate (workflows/sdlc.md § Phase 5):
 
 A ticket reaches the close state ONLY when one of these is true:
   - it carries the 'qa-passed' label (Salim verified every AC), OR
-  - it carries an exempt label (chore / docs / spike / infra / qa-bypass —
-    infra-class work with no user-facing AC)
+  - it carries the 'qa-bypass' label (sole class-level exempt under
+    the narrow default — AgDR-0032)
 
 To unblock:
 
@@ -156,12 +156,16 @@ To unblock:
        gh issue edit  ${BLOCKERS} --repo ${CMD_REPO} --add-label qa-passed
        # — the close fails first time; rerun after the label lands
 
-  2. If the ticket truly has no user-facing AC, apply an exempt label:
-       gh issue edit ${BLOCKERS} --repo ${CMD_REPO} --add-label chore
+  2. For deliberate one-off exceptions (legal hotfix, framework self-
+     bootstrap, broken-fork sync) apply 'qa-bypass':
+       gh issue edit ${BLOCKERS} --repo ${CMD_REPO} --add-label qa-bypass
+     Use sparingly; every applied 'qa-bypass' is auditable.
 
 The exempt set is configurable in .claude/project-config.json:
-  .qa.exempt_labels[]
+  .qa.exempt_labels[]  (narrow default: ["qa-bypass"])
 
-See AgDR for the design rationale (docs/agdr/AgDR-0031-qa-chain-mechanization.md).
+See AgDR for the design rationale:
+  docs/agdr/AgDR-0031-qa-chain-mechanization.md          (original chain)
+  docs/agdr/AgDR-0032-narrow-qa-exempt-to-qa-bypass-only.md (narrow exempt set)
 MSG
 exit 2
