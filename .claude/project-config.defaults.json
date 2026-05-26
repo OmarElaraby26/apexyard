@@ -200,5 +200,9 @@
     ],
     "verified_label": "qa-passed",
     "qa_label": "qa"
+  },
+  "ci": {
+    "_comment": "block-merge-on-red-ci.sh tightening: when require_to_exist is true, the hook BLOCKS a merge if `gh pr checks <pr>` reports no checks (in addition to its existing block-on-red behaviour). Default false preserves the pre-existing pass-with-NOTE behaviour for adopters whose projects intentionally have no CI. Set to true on free-tier private repos that can't use server-side branch protection (Pro-only) and need a client-side merge gate.",
+    "require_to_exist": false
   }
 }

@@ -19,10 +19,13 @@
 #
 # The hook allows:
 #   - exit 0 (all green)
-#   - exit 8 if the repo has no CI (gh pr checks returns "no checks" — allow)
+#   - exit 8 if the repo has no CI (gh pr checks returns "no checks" — allow,
+#     UNLESS the project opted in via .ci.require_to_exist=true)
 # Blocks:
 #   - exit 1 (red CI)
 #   - any check with state FAILURE | CANCELLED | TIMED_OUT
+#   - "no checks reported" when .ci.require_to_exist=true (opt-in for free-tier
+#     private repos that can't use server-side branch protection)
 #
 # Pending checks (IN_PROGRESS | QUEUED): BLOCKED. The rule says all checks
 # must be green; pending is not green. Wait for CI to finish, then retry.
@@ -67,10 +70,45 @@ fi
 CHECKS_OUTPUT=$(gh pr checks "$PR_NUMBER" $REPO_FLAG 2>&1)
 CHECKS_RC=$?
 
-# "no checks reported on the 'X' branch" — legitimate no-CI state. Allow.
-# Projects without CI (or branches without the expected workflow wiring)
-# hit this path. Log a single-line note so the user knows the gate was a no-op.
+# Load `.ci.require_to_exist` from project config (defaults to "false" for
+# back-compat — adopters without CI keep the prior pass-with-NOTE behaviour).
+# When `true`, missing checks become a BLOCK instead of a pass. Useful on
+# free-tier private repos that can't rely on server-side branch protection
+# (Pro-only) and need a client-side mechanical merge gate.
+REQUIRE_CI_TO_EXIST="false"
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/.claude/hooks/_lib-read-config.sh" ]; then
+  # shellcheck disable=SC1090,SC1091
+  . "$REPO_ROOT/.claude/hooks/_lib-read-config.sh"
+  REQUIRE_CI_TO_EXIST=$(config_get_or '.ci.require_to_exist' 'false' 2>/dev/null)
+fi
+
+# "no checks reported on the 'X' branch" — historically a legitimate no-CI
+# state. Block when the project opted in via `.ci.require_to_exist=true`;
+# otherwise pass with a one-line NOTE.
 if echo "$CHECKS_OUTPUT" | grep -q "no checks reported"; then
+  if [ "$REQUIRE_CI_TO_EXIST" = "true" ]; then
+    cat >&2 <<MSG
+BLOCKED: PR #${PR_NUMBER} has no CI checks reported. Cannot merge.
+
+Project config opt-in (.ci.require_to_exist=true) treats missing CI as a
+block, not a pass. This is the right shape for free-tier private repos
+that can't use server-side branch protection.
+
+To unblock:
+
+  1. Verify the CI workflow is wired (.github/workflows/*.yml present and
+     valid). Push triggers the workflow on PR HEAD.
+  2. If runner is self-hosted, verify it is online and idle:
+       gh api repos/<owner>/<repo>/actions/runners
+  3. Wait for the workflow run to complete on this PR's HEAD.
+  4. Retry: gh pr merge ${PR_NUMBER}
+
+To turn the strict mode off, remove .ci.require_to_exist from
+.claude/project-config.json (or set it to false explicitly).
+MSG
+    exit 2
+  fi
   echo "NOTE: PR #${PR_NUMBER} has no CI checks configured. Merge-on-red-CI gate is a no-op for this PR." >&2
   exit 0
 fi
