@@ -57,3 +57,12 @@ Before moving a ticket to Done:
 ## No Red CI Before Merge
 
 **Never** merge with red CI — even if the failure is pre-existing or unrelated. Fix the pre-existing issue first (separate commit), rebase the PR so all checks are green, and only then merge.
+
+Enforced mechanically by `block-merge-on-red-ci.sh`. Behaviour on the "no checks reported" edge case is configurable via `.claude/project-config.json`:
+
+| Flag | Default | Effect when `gh pr checks <pr>` reports no checks |
+|------|---------|---------------------------------------------------|
+| `.ci.require_to_exist` | `false` | Pass with a one-line NOTE (legitimate no-CI project). |
+| `.ci.require_to_exist` | `true` | **BLOCK** — treat missing CI as a failure. |
+
+Set to `true` on free-tier private repos that can't use server-side branch protection (Pro-only) and need a client-side mechanical merge gate. With the flag on, removing or breaking the CI workflow can no longer accidentally unblock merges.
