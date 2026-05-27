@@ -76,10 +76,18 @@ CHECKS_RC=$?
 # free-tier private repos that can't rely on server-side branch protection
 # (Pro-only) and need a client-side mechanical merge gate.
 REQUIRE_CI_TO_EXIST="false"
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/.claude/hooks/_lib-read-config.sh" ]; then
+# Self-locate the lib via `dirname $0`. The wrapper in .claude/settings.json
+# walks up to find the ops-fork anchor (.apexyard-fork or onboarding.yaml)
+# and execs this hook via its ops-fork-absolute path, so `$0` is guaranteed
+# to be `<ops_root>/.claude/hooks/block-merge-on-red-ci.sh`. Self-loading
+# means config-read works regardless of CWD — closes apexyard#11 where the
+# previous CWD-driven `REPO_ROOT/.claude/hooks/_lib-read-config.sh` check
+# failed when CWD was a managed-project workspace clone (which doesn't ship
+# hook libs). See AgDR-0053-managed-project-config-resolution.md.
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$HOOK_DIR/_lib-read-config.sh" ]; then
   # shellcheck disable=SC1090,SC1091
-  . "$REPO_ROOT/.claude/hooks/_lib-read-config.sh"
+  . "$HOOK_DIR/_lib-read-config.sh"
   REQUIRE_CI_TO_EXIST=$(config_get_or '.ci.require_to_exist' 'false' 2>/dev/null)
 fi
 

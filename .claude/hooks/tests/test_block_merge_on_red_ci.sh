@@ -144,6 +144,110 @@ install_gh_mock "$sb" "fail  build  Lint" 1
 run_case "red-flag-absent" "$sb" 2 "red CI"
 rm -rf "$sb"
 
+# --- Case 7: managed-project workspace shape (apexyard#11 / AgDR-0053) ---
+# CWD = workspace/<name>/ (NOT the ops fork). The workspace clone doesn't
+# ship `_lib-read-config.sh`; the ops fork has no `.ci.require_to_exist`
+# override. The workspace's `.claude/project-config.json` has the flag set
+# to true. Pre-fix: hook's `[ -f "$REPO_ROOT/.claude/hooks/_lib-read-config.sh" ]`
+# checks the workspace's git toplevel, fails, config read SKIPPED, default
+# false used → "no checks" passes with NOTE (BUG). Post-fix: hook self-loads
+# the lib via `dirname $0`; lib detects CWD inside a registered workspace
+# and layers the workspace's project-config.json over ops-fork override
+# over defaults → flag resolves to true → "no checks" BLOCKS.
+make_workspace_sandbox() {
+  local sb ops_fork ws_name workspace
+  sb=$(mktemp -d)
+  ws_name="testproj"
+  ops_fork="$sb/ops-fork"
+  workspace="$ops_fork/workspace/$ws_name"
+  # Ops fork init
+  mkdir -p "$ops_fork/.claude/hooks" "$ops_fork/.claude" "$ops_fork/bin"
+  (
+    cd "$ops_fork" || exit 1
+    git init -q
+    git config user.email "t@e.com" && git config user.name "t"
+    : > onboarding.yaml
+    cat > apexyard.projects.yaml <<EOF
+version: 1
+projects:
+  - name: ${ws_name}
+    repo: testorg/${ws_name}
+    workspace: workspace/${ws_name}
+    docs: projects/${ws_name}
+EOF
+    git add onboarding.yaml apexyard.projects.yaml
+    git commit -q -m "init ops fork"
+  )
+  cp "$HOOK_SRC"     "$ops_fork/.claude/hooks/block-merge-on-red-ci.sh"
+  cp "$LIB_PR"       "$ops_fork/.claude/hooks/_lib-extract-pr.sh"
+  cp "$LIB_CFG"      "$ops_fork/.claude/hooks/_lib-read-config.sh"
+  # The lib needs _lib-ops-root.sh to walk up correctly.
+  cp "$SRC_ROOT/.claude/hooks/_lib-ops-root.sh" "$ops_fork/.claude/hooks/_lib-ops-root.sh"
+  cp "$DEFAULTS_SRC" "$ops_fork/.claude/project-config.defaults.json"
+  chmod +x "$ops_fork/.claude/hooks/block-merge-on-red-ci.sh"
+  # Workspace clone — independent git repo, NO hook libs (mirrors real
+  # managed-project clones).
+  mkdir -p "$workspace/.claude"
+  (
+    cd "$workspace" || exit 1
+    git init -q
+    git config user.email "t@e.com" && git config user.name "t"
+    : > README.md
+    git add README.md
+    git commit -q -m "init workspace"
+  )
+  cat > "$workspace/.claude/project-config.json" <<'EOF'
+{
+  "ci": { "require_to_exist": true }
+}
+EOF
+  echo "$sb"
+}
+
+sb=$(make_workspace_sandbox)
+install_gh_mock "$sb/ops-fork" "no checks reported on the 'feature/x' branch" 0
+# Run hook with CWD=workspace, but invoke via the ops-fork-absolute path
+# (mimicking how the settings.json wrapper execs the hook).
+# APEXYARD_OPS_DISABLE_PIN=1 forces walk-up resolution so the lib finds
+# the sandbox ops fork, not the operator's real session ops fork.
+input='{"tool_input":{"command":"gh pr merge 42 --repo testorg/testproj --squash"}}'
+stderr_out=$(cd "$sb/ops-fork/workspace/testproj" && PATH="$sb/ops-fork/bin:$PATH" \
+  APEXYARD_OPS_DISABLE_PIN=1 \
+  bash "$sb/ops-fork/.claude/hooks/block-merge-on-red-ci.sh" <<<"$input" 2>&1 >/dev/null)
+exit_code=$?
+if [ "$exit_code" = 2 ] && echo "$stderr_out" | grep -qE "no CI checks reported"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  FAILED_CASES="${FAILED_CASES}\n  - workspace-flag-true: want exit 2 + 'no CI checks reported', got exit ${exit_code}\n    stderr: ${stderr_out}"
+fi
+rm -rf "$sb"
+
+# --- Case 8: workspace shape but project NOT registered → defaults apply ---
+# Sanity: an unregistered workspace doesn't accidentally pick up its
+# project-config.json. Defends against a stray dir under workspace/ being
+# treated as a managed project.
+sb=$(make_workspace_sandbox)
+# Wipe the registry's projects so testproj isn't registered anymore.
+cat > "$sb/ops-fork/apexyard.projects.yaml" <<'EOF'
+version: 1
+projects: []
+EOF
+install_gh_mock "$sb/ops-fork" "no checks reported on the 'feature/x' branch" 0
+stderr_out=$(cd "$sb/ops-fork/workspace/testproj" && PATH="$sb/ops-fork/bin:$PATH" \
+  APEXYARD_OPS_DISABLE_PIN=1 \
+  bash "$sb/ops-fork/.claude/hooks/block-merge-on-red-ci.sh" <<<"$input" 2>&1 >/dev/null)
+exit_code=$?
+# Expect: PASS (flag defaults to false because workspace isn't registered),
+# stderr shows the legacy "no CI checks configured" NOTE.
+if [ "$exit_code" = 0 ] && echo "$stderr_out" | grep -qE "no CI checks configured"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  FAILED_CASES="${FAILED_CASES}\n  - workspace-unregistered-ignored: want exit 0 + NOTE, got exit ${exit_code}\n    stderr: ${stderr_out}"
+fi
+rm -rf "$sb"
+
 echo "----------------------------------------"
 echo "PASS: $PASS"
 echo "FAIL: $FAIL"
