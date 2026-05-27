@@ -2,6 +2,13 @@
 # onboarding flag. Per-machine, per-clone. Never committed.
 .claude/session/
 
+# Scheduled-task lock written by the loop/schedule runner. Per-process,
+# ephemeral, never useful in git.
+.claude/scheduled_tasks.lock
+
+# Coverage reports downloaded from CI artifacts. Build output, never source.
+coverage-xml/
+
 # ApexYard per-project config written by /onboard. Contains deploy URLs and
 # sensitive-topic notes that should not leak to git — keep it local.
 .claude/project-config.json

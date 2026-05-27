@@ -1,0 +1,32 @@
+# =============================================================================
+# ApexYard Portfolio Registry
+# =============================================================================
+#
+# See apexyard.projects.yaml.example for the schema reference + example entries.
+#
+
+version: 1
+
+projects:
+  - name: kt-sdk
+    repo: OmarElaraby26/kt-sdk
+    workspace: workspace/kt-sdk
+    docs: projects/kt-sdk
+    status: handover
+    tier: P1
+    roles:
+      - tech-lead
+      - backend-engineer
+      - platform-engineer
+    tags:
+      - library
+      - python
+      - inherited
+    ticket_prefix: GH
+
+defaults:
+  status: active
+  tier: P1
+  ticket_prefix: GH
+  roles:
+    - tech-lead
