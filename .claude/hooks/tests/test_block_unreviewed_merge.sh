@@ -262,8 +262,11 @@ mkdir -p "$sb/workspace/demo"
 write_rex_marker "$sb" 212
 write_ceo_marker_structured "$sb" 212
 # Run the hook from inside workspace/demo cwd (not the ops fork).
+# APEXYARD_OPS_DISABLE_PIN=1 forces walk-up resolution so the sandbox
+# ops fork is used instead of the operator's real-session pin (which
+# points at the actual ops fork on disk).
 input=$(jq -nc --arg c "gh pr merge 212 --repo me2resh/apexyard" '{tool_name:"Bash", tool_input:{command:$c}}')
-got_stderr=$(cd "$sb/workspace/demo" && PATH="$sb/bin:$PATH" bash -c "echo '$input' | bash $sb/.claude/hooks/block-unreviewed-merge.sh" 2>&1 >/dev/null)
+got_stderr=$(cd "$sb/workspace/demo" && PATH="$sb/bin:$PATH" APEXYARD_OPS_DISABLE_PIN=1 bash -c "echo '$input' | bash $sb/.claude/hooks/block-unreviewed-merge.sh" 2>&1 >/dev/null)
 got_rc=$?
 rm -rf "$sb"
 if [ "$got_rc" = "0" ] && [ -z "$got_stderr" ]; then

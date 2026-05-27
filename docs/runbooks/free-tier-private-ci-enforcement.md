@@ -330,17 +330,31 @@ Same shape as Phase 1.4.
 
 ## Phase 4 — enable the ApexYard "strict missing-CI = block" flag
 
-ApexYard's `block-merge-on-red-ci.sh` defaults to "no checks = pass with NOTE". Free-tier private repos need the opposite — "no checks = BLOCK". A config flag (added in apexyard PR #6, available since framework versions including `.ci.require_to_exist`) turns this on.
+ApexYard's `block-merge-on-red-ci.sh` defaults to "no checks = pass with NOTE". Free-tier private repos need the opposite — "no checks = BLOCK". Two pieces of framework state must both be in place for the flag to fire on a managed project:
 
-### 4.1. Confirm the apexyard fork ships the flag
+| Framework piece | Adds | Apexyard ref |
+|-----------------|------|---------------|
+| `.ci.require_to_exist` flag in defaults | Hook reads the flag and treats `true` as "no checks = BLOCK" | PR #6 |
+| Workspace-config-aware lib (`_lib-read-config.sh` three-layer merge + hook `dirname $0` self-locate) | Hook actually reads `workspace/<name>/.claude/project-config.json` (the file this runbook tells you to create); pre-#12 the file was committed-but-never-read dead config | PR #12 (AgDR-0053) |
+
+> **Important — `/update` is required for this phase.** Adopters whose apexyard fork is older than commit `5825d38` (`fix(#11)` merge) MUST run `/update` past that point first. Otherwise the flag in step 4.2 will sit in `workspace/<name>/.claude/project-config.json` and be silently ignored — Salim caught this on a real run; see [`AgDR-0053-managed-project-config-resolution.md`](../agdr/AgDR-0053-managed-project-config-resolution.md).
+
+### 4.1. Confirm the apexyard fork ships both pieces
 
 ```bash
 cd <OPS_FORK>
+
+# Piece 1: the flag exists in defaults (PR #6)
 grep require_to_exist .claude/project-config.defaults.json
 # Expect: "require_to_exist": false (with a _comment line)
+
+# Piece 2: the lib reads workspace config (PR #12 / AgDR-0053)
+grep -l _config_workspace_overrides_file .claude/hooks/_lib-read-config.sh
+# Expect: .claude/hooks/_lib-read-config.sh
+# If empty: framework is pre-#12 — flag will not fire. Run /update first.
 ```
 
-If missing, the operator's apexyard fork is out of date. Run `/update` to sync from upstream first, or cherry-pick the upstream PR.
+If either grep is empty, the operator's apexyard fork is out of date. Run `/update` to sync from upstream first.
 
 ### 4.2. Add project-config override in the managed project
 
