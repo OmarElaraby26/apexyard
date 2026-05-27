@@ -15,6 +15,7 @@
 ## Current State
 
 ### Tech stack
+
 - Language: Python (>= 3.10)
 - Runtime: standard CPython; ships as importable libraries
 - Framework: none (pure library, no web/server)
@@ -23,6 +24,7 @@
 - CI: **none configured** — no `.github/workflows/` directory exists
 
 ### Repo shape
+
 Two-package monorepo with strict clean-architecture layering:
 
 ```
@@ -36,18 +38,22 @@ kt-sdk/
 ```
 
 Layer boundaries are **statically enforced** by `tests/test_sdk_layer_boundaries.py`:
+
 - `kt-core` imports only stdlib
 - `kt-models` imports only kt-core + torch + numpy
 - Neither references `kt-infra` or `kt-service` (which live elsewhere, app-specific)
 
 ### Build status
+
 - Not attempted (handover read static-only; no clone performed yet)
 - Per most recent commit message: 216 tests green as of 2026-05-21
 
 ### Test coverage
+
 - Unknown — no coverage report committed, no `[tool.coverage]` config in either pyproject.toml
 
 ### Repo activity
+
 - Commits in last 90 days: 10 (all 2026-05-21 — initial scaffold + GetNextQuestion work landed same day)
 - Open issues: 0
 - Open PRs: 0
@@ -55,25 +61,30 @@ Layer boundaries are **statically enforced** by `tests/test_sdk_layer_boundaries
 - Latest commit `efbc0384`: "refactor: address simplify review findings (race, parallelism, encapsulation)" — signs of internal review discipline already
 
 ### Architectural documentation
+
 - `README.md` — usage snippets, install order, reuse invariants
 - `agdd.md` — 12 architecture decisions (selection strategy, lookahead k, calibration, curriculum ownership, mode set, counterfactual mastery API, vectorization, β_item pruning, adaptive stopping, session state, reward function, forgetting reactivation). Each with options-considered + tradeoffs accepted. This is effectively the project's AgDR equivalent and aligns very well with apexyard's AgDR convention.
 
 ## Quality Risks
 
 ### Security
+
 - **No LICENSE file** — repo private, but license absence will bite if ever shared or distributed (PyPI publish, internal cross-team consumption)
 - **No secrets findings** — clean stdlib-only kt-core; no `.env` references in source
 
 ### Dependencies
+
 - `torch >= 2.1` and `numpy >= 1.24` — major ML deps; CVE posture not assessed (run `/audit-deps`)
 - No lock file (`requirements.txt` / `poetry.lock` / `uv.lock`) — reproducibility risk for downstream consumers
 - `pip install -e ./kt-core -e ./kt-models` install order is README-documented but not enforced by build tooling
 
 ### Technical debt
+
 - **Low** for a 1-day-old repo. Clean-architecture discipline is unusual at this stage and a strong signal.
 - Snapshot commit (`8e7412b5`) imported 182 tests; current head is 216 — 34 added during the GetNextQuestion work. Coverage of the new selector path is integration-shaped (good) but unmeasured.
 
 ### Operational
+
 - **No CI workflows** — main risk. No automated lint / typecheck / test run on push.
 - No release automation, no PyPI publishing config (intentional? unclear)
 - No CHANGELOG.md
@@ -82,6 +93,7 @@ Layer boundaries are **statically enforced** by `tests/test_sdk_layer_boundaries
 ## Integration Plan
 
 ### Roles that apply
+
 - `tech-lead` — architectural decisions in `agdd.md` need ongoing custody
 - `backend-engineer` — Python library implementation (DAS3H model, kt-core use cases)
 - `platform-engineer` — to wire CI (currently absent)
@@ -89,6 +101,7 @@ Layer boundaries are **statically enforced** by `tests/test_sdk_layer_boundaries
 No `frontend-engineer` (no UI), no `sre` (no production deployment — library, not service), no `security-auditor` (no auth/crypto/secrets in surface).
 
 ### Workflows that kick in
+
 - [ ] PR workflow (`.claude/rules/pr-workflow.md`) — every change goes through a PR
 - [ ] AgDR for technical decisions — `agdd.md` is the existing record; future decisions should be filed under `docs/agdr/`
 - [ ] Code Reviewer agent (Rex) on every PR
@@ -96,6 +109,7 @@ No `frontend-engineer` (no UI), no `sre` (no production deployment — library, 
 - [ ] `/audit-deps` on adoption and monthly thereafter (torch CVE surface area)
 
 ### Hooks to enable
+
 - [ ] `block-git-add-all`
 - [ ] `block-main-push`
 - [ ] `validate-branch-name` (set `ticket_prefix` for this project's GitHub Issues tracker)
@@ -104,6 +118,7 @@ No `frontend-engineer` (no UI), no `sre` (no production deployment — library, 
 - [ ] `check-secrets`
 
 ### CI templates to copy in
+
 - [ ] `golden-paths/pipelines/ci.yml` — adapt for Python (lint + pytest + coverage)
 - [ ] `golden-paths/pipelines/security.yml` — Semgrep + `pip-audit`
 - [ ] `golden-paths/pipelines/pr-title-check.yml` — ticket-ID enforcement

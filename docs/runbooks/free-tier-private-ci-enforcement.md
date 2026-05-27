@@ -5,6 +5,7 @@
 > Goal: end state where (a) CI runs on every PR, (b) `gh pr merge` is mechanically blocked when CI is red OR missing, (c) operator's machine catches lint/test failures pre-push, (d) all of it costs zero dollars.
 >
 > Constraints assumed:
+>
 > - Repo is **private** on a personal GitHub account (no GitHub Pro, no free org)
 > - Server-side branch protection is therefore NOT available (Pro-only on personal-account private repos)
 > - Project uses npm-style tooling (adjust `npm` → `pnpm` / `yarn` / `bun` where applicable)
@@ -427,7 +428,7 @@ If all five rows are populated, the project has end-to-end "no merge without gre
 | Job runs > 10 min, gets cancelled at `Post Setup Node` | `cache: 'npm'` on self-hosted runner — Post step uploads a tarball the runner doesn't need | Remove `cache: 'npm'` from `setup-node` config (this runbook's Phase 1.2 already does this) |
 | `gh api repos/...` blocked by ApexYard hook | `require-skill-for-issue-create.sh` false-positive on read-only API calls | Prefix with `APEXYARD_ALLOW_RAW_TICKET_CREATE=1` (operator-explicit override) |
 | Hook reports "BLOCKED" but I want to merge anyway | Strict mode caught a real "no CI" state | Bring runner online + push to trigger a fresh run, or temporarily set `require_to_exist=false` |
-| Push succeeds but no `[pre-push]` lines visible | Output got truncated by `| tail -N` | Run `.husky/_/pre-push HEAD origin` directly to confirm hook works |
+| Push succeeds but no `[pre-push]` lines visible | Output got truncated by `tail -N` filtering | Run `.husky/_/pre-push HEAD origin` directly to confirm hook works |
 | `gh pr merge` blocked: "no CEO approval marker" | This is the per-PR approval gate firing, not the CI gate | Use `/approve-merge <PR#>` skill (writes the structured marker AND merges in one turn) |
 
 ---

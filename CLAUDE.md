@@ -309,6 +309,7 @@ STATUS: {"phase":"<phase>","ticket":<n|null>,"pr":<n|null>,"question":"<text|nul
 ```
 
 Phase values:
+
 - `implementing` — actively writing code / running tools
 - `awaiting_rex` — PR open, waiting for CI/Rex verdict
 - `awaiting_approval` — Rex approved, ready for /approve-merge
@@ -322,6 +323,7 @@ Phase values:
 When boss asks "Recommend next ticket": respond with `phase=asking`, `question="Recommend #N — one-line reason. Start it?"`. Never stay on `phase=done` after recommending.
 
 Field rules:
+
 - `question`: null unless you need boss input. If set, phase must be `asking`.
 - `non_blocker`: UN-evaluated non-blocking finding only. Set to null once evaluated (ticketed or confirmed trivial). Never keep set across turns after evaluation.
 - `blocker`: anything blocking progress (open PR, missing qa-passed, dependency), else null.
@@ -331,6 +333,7 @@ Field rules:
 
 **PR reporting rule — include everything in one message, never make boss ask:**
 When PR is created OR when Rex verdict arrives, report ALL of the following in the same response:
+
 - PR number and URL
 - Rex verdict (APPROVED / CHANGES_REQUESTED / pending)
 - Every flag Rex raised, labelled blocking or non-blocking
