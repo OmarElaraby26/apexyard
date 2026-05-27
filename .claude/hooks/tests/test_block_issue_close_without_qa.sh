@@ -20,7 +20,7 @@ make_sandbox() {
   local sb
   sb=$(mktemp -d)
   (
-    cd "$sb"
+    cd "$sb" || exit
     git init -q
     git config user.email "test@example.com"
     git config user.name "test"

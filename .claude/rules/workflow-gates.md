@@ -123,3 +123,7 @@ The client-side hooks give fast feedback in the operator's terminal; the server-
 Exempt-label set + verified-label name are configurable in `.claude/project-config.json` under `.qa.*`.
 
 See `docs/agdr/AgDR-0031-qa-chain-mechanization.md` for the design rationale.
+
+---
+
+*Part of [ApexYard](https://github.com/me2resh/apexyard) — multi-project SDLC framework for Claude Code · MIT.*
