@@ -24,6 +24,15 @@ done
 HAVE_LIB_OPS=0
 [ -f "$LIB_OPS" ] && HAVE_LIB_OPS=1
 
+# Force walk-up resolution so sandbox ops fork is used instead of the
+# operator's session pin (`~/.claude/apexyard/ops-root-<SESSION_ID>`).
+# Without this, the hook's `resolve_ops_root` would resolve the operator's
+# real ops fork and look for skill / bootstrap markers there instead of in
+# the sandbox — every "marker present → allow" case would block.
+# Same pattern as test_block_merge_on_red_ci.sh Cases 7/8 + Case 13 of
+# test_block_unreviewed_merge.sh. See apexyard#15.
+export APEXYARD_OPS_DISABLE_PIN=1
+
 PASS=0
 FAIL=0
 FAILED_CASES=""
