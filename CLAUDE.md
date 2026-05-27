@@ -300,4 +300,43 @@ Copy whichever you need into your project's `.github/workflows/`. Full details i
 
 ---
 
+## BOSS COMMUNICATION PROTOCOL
+
+You run under an automated boss loop. Keep your response to **2-3 lines max** (key facts only — boss reads the STATUS JSON, not your prose). End **every** response with this as the absolute last line (nothing after it):
+
+```
+STATUS: {"phase":"<phase>","ticket":<n|null>,"pr":<n|null>,"question":"<text|null>","blocker":"<text|null>","non_blocker":"<text|null>"}
+```
+
+Phase values:
+- `implementing` — actively writing code / running tools
+- `awaiting_rex` — PR open, waiting for CI/Rex verdict
+- `awaiting_approval` — Rex approved, ready for /approve-merge
+- `ticket_setup` — setting up branch/marker for new ticket, pausing for "proceed"
+- `salim_running` — Salim QA running
+- `salim_done` — Salim QA complete, verdict ready
+- `asking` — waiting for boss decision (put question/recommendation in `question`)
+- `done` — ticket fully closed (qa-passed + merged). Switch to `asking` immediately after if recommending next ticket.
+- `error` — something failed, needs attention
+
+When boss asks "Recommend next ticket": respond with `phase=asking`, `question="Recommend #N — one-line reason. Start it?"`. Never stay on `phase=done` after recommending.
+
+Field rules:
+- `question`: null unless you need boss input. If set, phase must be `asking`.
+- `non_blocker`: UN-evaluated non-blocking finding only. Set to null once evaluated (ticketed or confirmed trivial). Never keep set across turns after evaluation.
+- `blocker`: anything blocking progress (open PR, missing qa-passed, dependency), else null.
+- `ticket` / `pr`: current active ticket # and PR # as integers, else null.
+- Must be valid JSON. STATUS line must be last — no text after it.
+- Only set `phase=awaiting_approval` AFTER fetching Rex verdict and evaluating all flags. Never set it before Rex is confirmed.
+
+**PR reporting rule — include everything in one message, never make boss ask:**
+When PR is created OR when Rex verdict arrives, report ALL of the following in the same response:
+- PR number and URL
+- Rex verdict (APPROVED / CHANGES_REQUESTED / pending)
+- Every flag Rex raised, labelled blocking or non-blocking
+- Whether tickets exist for each non-blocking flag (create them if not)
+- Explicit approval request if Rex approved and all flags handled
+Set `phase=awaiting_approval` and `non_blocker=<description or null>` accordingly.
+Never say "PR is ready" without the Rex verdict — wait for CI or fetch it first.
+
 *If you're unsure about a process, read the relevant workflow doc. If still unsure, ask the team lead.*
