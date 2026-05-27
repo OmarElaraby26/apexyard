@@ -82,7 +82,7 @@ Asserts: flag IS read from the workspace's project-config.json even when CWD's g
 
 ### Runbook
 
-`docs/runbooks/free-tier-private-ci-enforcement.md` § Phase 4 — replace "available since framework versions including .ci.require_to_exist" with a pointer to this AgDR + the apexyard version that ships the resolution fix (TBD post-merge).
+`docs/runbooks/free-tier-private-ci-enforcement.md` § Phase 4 — runbook updated in #13 to name both framework pieces explicitly (PR #6 for the flag + this PR's merge commit `5825d38` for the workspace-config-aware lib), with the explicit warning that adopters on pre-`5825d38` apexyard must `/update` first. Pointer to this AgDR included.
 
 ### kt-sdk#129 re-verification
 
