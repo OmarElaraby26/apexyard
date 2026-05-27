@@ -10,6 +10,11 @@
 
 set -u
 
+# Force walk-up resolution so sandboxed _lib-ops-root.sh finds the
+# sandbox ops fork instead of the operator's session pin. Same pattern
+# as test_block_merge_on_red_ci.sh Cases 7/8 (apexyard#11/#12).
+export APEXYARD_OPS_DISABLE_PIN=1
+
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/../../.." && pwd)
 HOOK="$REPO_ROOT/.claude/hooks/require-agdr-for-arch-pr.sh"

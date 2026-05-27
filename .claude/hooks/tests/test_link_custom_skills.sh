@@ -18,6 +18,11 @@
 
 set -u
 
+# Force walk-up resolution so sandboxed _lib-ops-root.sh finds the
+# sandbox ops fork instead of the operator's session pin. Same pattern
+# as test_block_merge_on_red_ci.sh Cases 7/8 (apexyard#11/#12).
+export APEXYARD_OPS_DISABLE_PIN=1
+
 HOOK_SRC="$(cd "$(dirname "$0")/.." && pwd)/link-custom-skills.sh"
 LIB_PORTFOLIO_SRC="$(cd "$(dirname "$0")/.." && pwd)/_lib-portfolio-paths.sh"
 LIB_CONFIG_SRC="$(cd "$(dirname "$0")/.." && pwd)/_lib-read-config.sh"

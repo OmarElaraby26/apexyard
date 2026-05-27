@@ -37,6 +37,11 @@
 
 set -u
 
+# Force walk-up resolution so sandboxed _lib-ops-root.sh finds the
+# sandbox ops fork instead of the operator's session pin. Same pattern
+# as test_block_merge_on_red_ci.sh Cases 7/8 (apexyard#11/#12).
+export APEXYARD_OPS_DISABLE_PIN=1
+
 SRC_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 SYNC_HOOK="$SRC_ROOT/.claude/hooks/apply-agent-routing.sh"
 DRIFT_HOOK="$SRC_ROOT/.claude/hooks/block-agent-routing-drift.sh"
