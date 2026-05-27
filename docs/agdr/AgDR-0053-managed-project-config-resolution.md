@@ -25,6 +25,7 @@ Net effect: the flag never fires. The merge gate's "no checks reported → BLOCK
 Chosen: **A** — workspace-config-aware lib + hook self-loads via `dirname $0`.
 
 Rationale:
+
 - Matches operator mental model: project-scoped config lives in the project's repo (per the runbook).
 - Smallest diff that fixes the bug end-to-end. Two files changed (`_lib-read-config.sh`, `block-merge-on-red-ci.sh`), one new test case added.
 - Doesn't pollute the registry schema (rejected option B's main downside).
