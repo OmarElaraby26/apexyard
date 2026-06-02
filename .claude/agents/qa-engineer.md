@@ -1,4 +1,5 @@
 ---
+# routing-config:override qa-engineer bumped haiku→opus for higher-recall AC verification and regression checks. Intentional fork-default change.
 name: qa-engineer
 description: Verifies acceptance criteria on merged PRs, triages bugs, runs regression checks, and signs off tickets before they move to Done. Activates when a ticket enters the QA state after merge. Read-only by design — QA verifies, doesn't ship.
 model: opus
