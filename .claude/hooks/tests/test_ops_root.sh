@@ -24,6 +24,11 @@
 
 set -u
 
+# Disable ops-root pin lookup so sandbox invocations of _lib-ops-root.sh
+# resolve the temp-dir test fork, not the real ops fork via CLAUDE_CODE_SESSION_ID.
+# The pin mechanism was added in v2.2.0 (_lib-ops-root.sh). (#25)
+export APEXYARD_OPS_DISABLE_PIN=1
+
 SRC_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 LIB="$SRC_ROOT/.claude/hooks/_lib-ops-root.sh"
 
