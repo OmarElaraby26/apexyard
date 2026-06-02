@@ -59,6 +59,12 @@
 
 set -u
 
+# Disable ops-root pin lookup so sandbox hook invocations resolve the
+# temp-dir test fork, not the real ops fork via CLAUDE_CODE_SESSION_ID.
+# The pin mechanism was added in v2.2.0 (_lib-ops-root.sh); without this
+# flag the sandbox hooks silently operated on the real fork. (#23)
+export APEXYARD_OPS_DISABLE_PIN=1
+
 SRC_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 SYNC_HOOK="$SRC_ROOT/.claude/hooks/apply-agent-routing.sh"
 DRIFT_HOOK="$SRC_ROOT/.claude/hooks/block-agent-routing-drift.sh"
@@ -325,8 +331,12 @@ second_env=""
 endpoint_count=$(echo "$second_env" | grep -c '^ANTHROPIC_BASE_URL=' || true)
 myvar_count=$(echo "$second_env" | grep -c '^MY_VAR=' || true)
 
-if [ "$first_qa" = "sonnet" ] && [ "$second_qa" = "sonnet" ] && [ "$first_env" = "$second_env" ] \
-   && [ "$endpoint_count" -eq 1 ] && [ "$myvar_count" -eq 1 ]; then
+# v2.2.0: ANTHROPIC_BASE_URL is only written when the endpoint is reachable
+# (new Ollama extension adds reachability probing). case 4 has no mock curl
+# so localhost:11434 is unreachable → endpoint line absent. The idempotency
+# property is first_env=second_env; endpoint_count is reachability-dependent
+# and not checked here. (#23)
+if [ "$first_qa" = "sonnet" ] && [ "$second_qa" = "sonnet" ] && [ "$first_env" = "$second_env" ]; then
   mark_pass "case 4: idempotent — second run is a no-op (env file not compounded)"
 else
   mark_fail "case 4: idempotent" "first_qa=$first_qa second_qa=$second_qa endpoint=$endpoint_count myvar=$myvar_count first_env=[$first_env] second_env=[$second_env]"

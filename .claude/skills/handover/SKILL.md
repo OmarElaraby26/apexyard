@@ -125,7 +125,7 @@ else
 fi
 ```
 
-In single-fork mode `WORKSPACE_DIR` resolves to `<ops-root>/workspace`; in split-portfolio v2 mode it resolves to the sibling private repo (e.g. `../<fork>-portfolio/workspace`). Don't hardcode `workspace/<name>/`.
+In single-fork mode `WORKSPACE_DIR` resolves to `<ops-root>/workspace`; in split-portfolio v2 mode it resolves to the sibling private repo (e.g. `../<fork>-portfolio/workspace`). Don't hardcode `workspace/<name>/`. The workspace/ directory is gitignored by the ops fork so clones are never accidentally committed.
 
 #### On clone failure
 
@@ -985,8 +985,9 @@ Print a single follow-up offer after the step 10 summary:
   3. /code-review <name>    — Rex code-quality review
 
   Note: LSP-aware navigation requires ENABLE_LSP_TOOL=1 and a per-language
-  Claude Code LSP plugin installed. Cross-project queries still need grep
-  (LSP is per-workspace). Cold-start on large monorepos can be 30+ seconds.
+  Claude Code LSP plugin installed (plugin install is handled outside this skill).
+  Cross-project queries still need grep (LSP is per-workspace).
+  Cold-start on large monorepos can be 30+ seconds.
 
 [1/2/3/all/none — default none]
 ```

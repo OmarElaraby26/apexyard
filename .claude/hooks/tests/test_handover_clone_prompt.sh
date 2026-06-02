@@ -55,9 +55,11 @@ spec_assert() {
 # at the documented location.
 # ---------------------------------------------------------------------------
 
-# 1. The new step exists, with a heading that names the clone-first option.
+# 1. The new step exists. v2.2.0 moved cloning to step 1.5-clone (auto,
+#    no prompt) and step 8 became the follow-up deep-dive skills offer.
+#    Update: pin to the current step 8 heading. (#23)
 spec_assert "spec-step-heading" \
-  "### 8. Offer the clone-first deep-dive option (recommended)"
+  "### 8. Offer follow-up deep-dive skills (against the already-cloned repo)"
 
 # 2. Insertion point — step 7 (registry append) still precedes step 8, and
 #    step 9 (validation) follows step 8. Catches accidental reordering.
@@ -69,31 +71,33 @@ spec_assert "spec-step-10-summary" \
   "### 10. Return a summary"
 
 # 3. Five cost-transparency facts (AC #3 of the ticket).
+#    v2.2.0 rephrase: plugin install text changed; cross-project grep
+#    wording shortened; prompt moved. Updated to match current SKILL.md. (#23)
 spec_assert "spec-cost-1-enable-lsp-tool"   "ENABLE_LSP_TOOL=1"
-spec_assert "spec-cost-2-plugin-install"    "plugin install is your problem"
-spec_assert "spec-cost-3-disk-and-gitignore" "gitignored"
-spec_assert "spec-cost-4-cross-project-grep" "Cross-project semantic queries still need grep"
+spec_assert "spec-cost-2-plugin-install"    "LSP plugin installed"
+spec_assert "spec-cost-3-disk-and-gitignore" "workspace/ directory is gitignored"
+spec_assert "spec-cost-4-cross-project-grep" "Cross-project queries still need grep"
 spec_assert "spec-cost-5-cold-start"         "Cold-start on large monorepos can be 30+ seconds"
 
-# 4. Three-option prompt response shape.
-spec_assert "spec-prompt-response-options" "[y / n / later]"
+# 4. Follow-up prompt response shape (v2.2.0: changed from y/n/later to
+#    numbered skill menu). (#23)
+spec_assert "spec-prompt-response-options" "[1/2/3/all/none"
 
 # 5. Follow-up skill suggestion on success (AC #4 of the ticket).
+#    v2.2.0: text changed to multi-skill offer. (#23)
 spec_assert "spec-followup-threat-model" \
-  "Want to run /threat-model against the new clone now?"
+  "Want to run any of the following against the clone now?"
 
 # 6. Skip-if-exists branch is documented. After framework #242 the skill
-# resolves the workspace dir via portfolio_workspace_dir (split-portfolio
-# v2 may point it at a sibling private repo), so the literal becomes
-# `$WORKSPACE_DIR/<name>` rather than `workspace/<name>`. The shape of
-# the skip branch (an `if [ -d ... ]; then` guard around `git clone`)
-# is what the spec test pins.
+# resolves the workspace dir via portfolio_workspace_dir. After v2.2.0 the
+# skip guard checks for .git/ presence. (#23)
 spec_assert "spec-skip-if-exists" \
-  'if [ -d "$WORKSPACE_DIR/<name>" ]; then'
+  'if [ -d "$WORKSPACE_DIR/<name>/.git" ]; then'
 
-# 7. Decline path documented as silent (no side effects).
+# 7. Decline path documented as silent. v2.2.0 phrasing: "Skip this step
+#    silently". (#23)
 spec_assert "spec-decline-silent" \
-  "Skip silently — no side effects"
+  "Skip this step silently"
 
 # ---------------------------------------------------------------------------
 # Runtime-shape simulator. Mirrors the bash logic the spec documents in
