@@ -100,6 +100,7 @@ Score: 1 of 5 dimensions in the strong/present bucket; combined with `type_safet
 ### Domain / research caveats (not technical bugs — documented honest limits)
 
 The README explicitly surfaces these. Listed here so the assessment reflects them, not because the code is broken:
+
 - `survivorship_bias: "reduced"` (today's EGX-33 list applied backward to 2024-Q1).
 - `pit_fundamentals: True` (composite uses today's fundamentals snapshot).
 - 26-month sample, 32 names, one regime (post-2024-Q1 recovery). Statistical power is thin.
