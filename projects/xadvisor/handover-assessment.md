@@ -16,6 +16,7 @@
 ## Current State
 
 ### Tech stack
+
 - **Language**: Python 3.12+ (`requires-python = ">=3.12"`).
 - **Runtime**: CPython only (no async event loop in the hot path; httpx used in sync mode).
 - **CLI framework**: `typer 0.26` (entry-point `egx = "egxdata.cli:app"`).
@@ -29,16 +30,19 @@
 - **CI**: NONE — no `.github/workflows/`, no other pipeline config detected.
 
 ### Build status
+
 - `uv sync`: ok (resolves + installs all deps cleanly into `.venv/`).
 - `pytest`: 1 failed / 122 passed — see Quality Risks below.
 - Lint (`ruff check`): not attempted in this handover; ruff is configured in `pyproject.toml` so the baseline exists.
 - Type check: NOT ATTEMPTED — no mypy/pyright config exists.
 
 ### Test coverage
+
 - Unknown — no `coverage` / `--cov` config in `pyproject.toml`, no coverage step anywhere.
 - README claims "118 tests passing" — reality is 123 (122 pass + 1 fail). Doc is mildly stale.
 
 ### Repo activity
+
 - Commits in last 90 days: 9 (entire history).
 - Open issues: 0.
 - Open PRs: 0.
@@ -65,17 +69,20 @@ Score: 1 of 5 dimensions in the strong/present bucket; combined with `type_safet
 ## Quality Risks
 
 ### Security
+
 - **No secrets in source** — scanned `egxdata/**/*.py` for `api_key|password|secret|token`, no hits. No `.env*` files in repo. All data sources (yfinance, stockanalysis.com, IMF) are public, no API keys required.
 - **No auth/crypto surface** — toolkit is read-only against public sources and writes to local SQLite + parquet on disk; no user authentication, no encryption, no HTTPS server.
 - **Web-scraping fragility** — `egxdata/sources/stockanalysis.py` parses HTML via `selectolax`. Upstream HTML changes silently break the universe refresh; no contract test against a saved fixture.
 
 ### Dependencies
+
 - **`pyportfolioopt 1.5.5`** is several minor versions behind (latest 1.6.x installed by `uv sync` is `pyportfolioopt==1.6.0`, so `>=1.5.5` floats forward — OK). Re-pin if a 1.6 incompatibility surfaces.
 - **`scikit-learn 1.3`** floor is from 2023; installed version pulled in `1.9.0`. Wide drift — verify nothing in the codebase relies on deprecated 1.3-era APIs.
 - **`cvxpy 1.5`** + **`scs`** — both compile native code; will need re-resolution on Python upgrades.
 - No `pip-audit` / `safety` run in this handover; run `/audit-deps` to triage CVEs.
 
 ### Technical debt
+
 - **No type checking** — modules use PEP-604 hints in places but nothing enforces consistency or catches regressions.
 - **1 failing test** — `tests/golden/test_twr.py::test_synthetic_real_world_walk_forward_twr` fails with `sqlite3.OperationalError: unable to open database file`. Looks like the test expects a `data/` directory the test runner doesn't create. Test-infra issue, not a domain bug.
 - **README claims "118 tests passing"** — actual count is 123 (122 pass + 1 fail). Doc drift.
@@ -84,12 +91,14 @@ Score: 1 of 5 dimensions in the strong/present bucket; combined with `type_safet
 - **Notebooks unsynced** — `notebooks/` directory present but not part of the test or lint surface.
 
 ### Operational
+
 - **No CI** — every push lands on `main` with no automated check; no protection against the failing test recurring or regressing.
 - **No deploy automation** — research toolkit, runs locally; expected, but worth naming.
 - **No observability outside the in-app `health-check` command** — the README's "observability layer" is project-domain observability (regime tracking), not runtime observability.
 - **Single branch (`main`)** — no protected-branch policy; PR workflow has never been used here yet.
 
 ### Domain / research caveats (not technical bugs — documented honest limits)
+
 The README explicitly surfaces these. Listed here so the assessment reflects them, not because the code is broken:
 - `survivorship_bias: "reduced"` (today's EGX-33 list applied backward to 2024-Q1).
 - `pit_fundamentals: True` (composite uses today's fundamentals snapshot).
@@ -99,6 +108,7 @@ The README explicitly surfaces these. Listed here so the assessment reflects the
 ## Integration Plan
 
 ### Roles that apply
+
 - `tech-lead` — every project gets one.
 - `backend-engineer` — Python module work, scoring/portfolio/storage logic.
 - `data-engineer` — ETL from web sources to parquet + SQLite (`sources/`, `storage/`).
@@ -107,12 +117,14 @@ The README explicitly surfaces these. Listed here so the assessment reflects the
 Not activated (no signal): `frontend-engineer` (no UI), `platform-engineer` (no CI yet — flips on the moment CI is added), `sre` (no production deployment), `security-auditor` (no auth/crypto/secrets diff).
 
 ### Workflows that kick in
+
 - [ ] PR workflow (`.claude/rules/pr-workflow.md`) — every change goes through a PR (currently the repo has never used PRs).
 - [ ] AgDR for technical decisions — start tracking method-selection / library-choice calls.
 - [ ] Code Reviewer agent on every PR (Rex, advisory-only given low harnessability).
 - [ ] `/audit-deps` on adoption and monthly thereafter.
 
 ### Hooks to enable
+
 - [ ] `block-git-add-all`
 - [ ] `block-main-push`
 - [ ] `validate-branch-name` (set `ticket_prefix` for this project's tracker — GitHub Issues `#N`).
@@ -121,6 +133,7 @@ Not activated (no signal): `frontend-engineer` (no UI), `platform-engineer` (no 
 - [ ] `check-secrets`
 
 ### CI templates to copy in
+
 - [ ] `golden-paths/pipelines/ci.yml` (will need Python-stack adjustments — the default is TypeScript-leaning).
 - [ ] `golden-paths/pipelines/pr-title-check.yml`.
 - (No `golden-paths/pipelines/security.yml` analogue for Python — substitute `pip-audit` or `safety` step.)
