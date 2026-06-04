@@ -8,20 +8,22 @@
 version: 1
 
 projects:
-  - name: kt-sdk
-    repo: OmarElaraby26/kt-sdk
-    workspace: workspace/kt-sdk
-    docs: projects/kt-sdk
-    status: handover
+  - name: xadvisor
+    repo: OmarElaraby26/xadvisor
+    workspace: workspace/xadvisor
+    docs: projects/xadvisor
+    status: active
     tier: P1
     roles:
       - tech-lead
       - backend-engineer
-      - platform-engineer
+      - data-engineer
+      - data-analyst
     tags:
-      - library
+      - cli
       - python
-      - inherited
+      - research
+      - finance
     ticket_prefix: GH
 
 defaults:
