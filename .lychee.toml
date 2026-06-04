@@ -1,0 +1,13 @@
+# Lychee link-check configuration for the apexyard ops repo.
+#
+# Managed projects registered in apexyard.projects.yaml may be private GitHub
+# repos. Links to their issues and PRs are valid cross-references that lychee
+# cannot verify from CI (403 from github.com). Exclude them here so the
+# link-check job reports real link rot, not expected private-repo 403s.
+#
+# Extend this list when a new private project is registered.
+
+exclude = [
+  # Private managed projects (registered in apexyard.projects.yaml)
+  "github\\.com/OmarElaraby26/xadvisor",
+]
