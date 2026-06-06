@@ -19,9 +19,11 @@ The project has crossed a threshold:
 ### Signal existence ≠ investability (LOCKED, AgDR-0003 Decision 2)
 
 The Phase 1.5 result supports:
+
 - Evidence that a ranking signal may exist (IC = 0.144, t = 3.79)
 
 The Phase 1.5 result does NOT support:
+
 - Evidence of investability after costs
 - Evidence of persistent alpha vs a tradeable passive alternative
 - Evidence of robustness across regimes
