@@ -94,6 +94,7 @@ be disclosed in any paper or report.
 should be treated with extra caution — data gaps may explain any apparent alpha.
 
 Typical pattern:
+
 - Post-2021 periods: dense (most active stocks have price files)
 - 2019–2021: moderate sparsity depending on how many stocks have been fetched
 - Pre-2019: always sparse until a comprehensive data fetch covers older history

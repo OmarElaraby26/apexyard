@@ -68,12 +68,14 @@ Per AgDR-0002 outcome rules: 1 PASS + 2 WEAK + 1 NOT-COMPUTED → **AMBIGUOUS** 
 These are different claims requiring different evidence.
 
 **Evidence the project now has** (supports existence):
+
 - A ranking signal may exist (Cleaned IC = +0.144, t = 3.79, n = 14)
 - The signal survives at least some bias cleanup
 - The signal is weaker than originally believed (post-cleanup IC drop is real and material)
 - The system is no longer obviously dominated by lookahead bias
 
 **Evidence the project does NOT yet have** (would be required for investability):
+
 - Persistent alpha across cost-aware comparison vs passive benchmark
 - Robustness to filing-date assumptions
 - Robustness across multiple macro regimes
@@ -117,7 +119,7 @@ Phase 2 promotion happens IF AND ONLY IF all of these are true after Phase 1.75 
 3. A new calibration AgDR (AgDR-0004+) is written BEFORE reading the Phase 1.75 net results — this time on the correct order
 4. Explicit promotion decision in a review meeting referencing AgDR-0001 anti-scope freeze for unfreeze authorization
 
-If those criteria are not met, Phase 2 stays in backlog ([xadvisor#70](https://github.com/OmarElaraby26/issues/70)).
+If those criteria are not met, Phase 2 stays in backlog ([xadvisor#70](https://github.com/OmarElaraby26/xadvisor/issues/70)).
 
 ## Options Considered
 
