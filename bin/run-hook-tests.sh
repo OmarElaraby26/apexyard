@@ -23,12 +23,11 @@ cd "$ROOT" || exit 1
 # --- Quarantine list (path :: reason). Empty by default; populated only with
 # --- evidence (a CI failure that is environmental, not a real regression). ---
 QUARANTINE=(
-  # Remaining pre-existing failures (NOT caused by the gate) — tracked in #528.
-  # The other three originally-quarantined tests (token_efficiency_wave1,
-  # harnessability_scoring, md_to_pdf_fallback) were FIXED and un-quarantined.
-  # These two need deeper work:
-  ".claude/hooks/tests/test_handover_clone_prompt.sh :: ~8 literal-substring assertions pin the PRE-restructure /handover clone-prompt spec (clone moved to step 1.5, follow-up to step 8); needs an assertion rewrite — #528"
-  ".claude/hooks/tests/test_agent_routing_sync_and_drift.sh :: 4 cases drift (override/idempotent/drift-guard) vs committed agent-routing.yaml; may be a real config regression — needs investigation, not a test patch — #528"
+  # One remaining pre-existing failure — tracked in #528. The other four
+  # originally-quarantined tests (token_efficiency_wave1, harnessability_scoring,
+  # md_to_pdf_fallback, agent_routing_sync_and_drift) have been FIXED and
+  # un-quarantined. This last one needs a test REWRITE, not a patch:
+  ".claude/hooks/tests/test_handover_clone_prompt.sh :: spec-pins a clone-prompt design that no longer exists — the /handover SKILL was redesigned (clone-by-default at step 1.5 + follow-up offer at step 8), so the [y/n/later]-prompt assertions test a removed feature; needs a rewrite against the current spec — #528"
 )
 
 is_quarantined() {
