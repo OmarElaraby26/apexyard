@@ -13,19 +13,17 @@ flowchart LR
     researcher([Researcher / Investor<br/>local shell])
     yfin([Yahoo Finance<br/>HTTPS, public, no auth])
     sa([stockanalysis.com<br/>HTTPS, public HTML, no auth])
-    imf([IMF Egypt<br/>HTTPS, public JSON, no auth])
+    imf([openbb-imf<br/>Egypt macro via openbb API])
     broker([Broker<br/>out-of-band; fills logged manually])
 
     subgraph LOCAL [Local machine — single trust zone]
         direction TB
         cli[egx CLI<br/>typer entry-point]
         portfolio[Portfolio engine<br/>scoring · backtest · optimize · attribution]
-        sources[Data sources adapter<br/>httpx + selectolax + hishel + tenacity]
+        sources[Data sources adapter<br/>httpx + tenacity + pd.read_html (lxml)]
 
         sqlite[(SQLite<br/>tickers · refresh log · live ledger)]
         parquet[(Parquet files<br/>OHLCV · fundamentals · macro)]
-        duckdb[(DuckDB<br/>query layer over parquet — in-process)]
-        cache[(Hishel HTTP cache<br/>response bodies on disk)]
     end
 
     %% --- Cross-boundary flows (labelled with payload) ---
@@ -44,19 +42,15 @@ flowchart LR
 
     sources --> sqlite
     sources --> parquet
-    sources --> cache
     portfolio --> sqlite
     portfolio --> parquet
-    portfolio --> duckdb
-
-    duckdb --> parquet
 ```
 
 ## Trust boundaries
 
 | Boundary | Crosses | Auth | Data classifications crossing |
 |----------|---------|------|-------------------------------|
-| **Local machine ↔ Public internet** | `sources → {yfin, sa, imf}` | NONE — public read-only endpoints | Public (market quotes, fundamentals, macro). No request body carries identifying or PII data. |
+| **Local machine ↔ Public internet** | `sources → {yfin, sa, openbb-imf}` | NONE — public read-only endpoints | Public (market quotes, fundamentals, macro). No request body carries identifying or PII data. |
 | **Researcher ↔ CLI** | `researcher → cli` (shell args + stdout) | OS user (local shell session) | PII: live-ledger writes (`live-add-deposit`, `live-add-fill`) carry the investor's personal trade detail. Stays inside the local trust zone. |
 | **Broker ↔ Researcher** (out-of-band) | `broker → researcher` (paper confirms / app notifications), then `researcher → cli` | Broker's own auth (out of scope for this codebase) | PII: trade confirmations. The codebase never touches the broker API directly — fills are manually transcribed. |
 
@@ -73,7 +67,7 @@ Inside the **Local machine** zone, CLI / portfolio / sources / all stores share 
 | `live_deposit.amount`, `live_deposit.date` | **PII — investor financial** | inferred from semantics (personal capital flows) | `egxdata/portfolio/live.py` |
 | `live_fill.symbol`, `live_fill.qty`, `live_fill.price`, `live_fill.date` | **PII — investor financial** | inferred from semantics (personal trade records) | `egxdata/portfolio/live.py` |
 | `live_status.*` (current portfolio composition, cash, returns) | **PII — investor financial** | inferred from semantics | `egxdata/portfolio/live.py` |
-| Hishel HTTP cache contents | **Public** (derived from public sources) | inferred from upstream classification | on-disk cache dir, gitignored |
+| Custom JSON HTTP cache contents | **Public** (derived from public sources) | inferred from upstream classification | on-disk cache dir (`egxdata/http.py`), gitignored |
 | API keys / tokens / passwords | **N/A — none exist** | scan: `grep -rEi 'api[_-]?key\|password\|secret\|token' egxdata` returns zero hits | confirmed during `/handover` security scan |
 
 **Explicit registry**: no `docs/data-classification.{md,yaml}` exists for this project. All classifications above are heuristic / semantic-inferred and may be tightened by adding an explicit registry.
@@ -86,20 +80,19 @@ Inside the **Local machine** zone, CLI / portfolio / sources / all stores share 
 | `Portfolio engine` process | `egxdata/portfolio/` sub-package (12 modules: backtest, returns, covariance, expected_returns, metrics, attribution, etc.) |
 | `Data sources adapter` process | `egxdata/sources/{yfin,stockanalysis,imf_egypt}.py` |
 | Yahoo Finance actor | `egxdata/sources/yfin.py` |
-| stockanalysis.com actor | `egxdata/sources/stockanalysis.py` + `selectolax` HTML parsing |
-| IMF Egypt actor | `egxdata/sources/imf_egypt.py` |
+| stockanalysis.com actor | `egxdata/sources/stockanalysis.py` + `pd.read_html` (lxml backend) HTML parsing |
+| openbb-imf actor | `egxdata/sources/imf_egypt.py` + `openbb-imf` library |
 | SQLite store | `egxdata/storage/db.py` (`sqlalchemy 2`) — detected by `discover.sh` as `rdbms_sqlalchemy` |
 | Parquet store | `egxdata/storage/parquet.py` + `pyproject.toml` `pyarrow>=15` |
-| DuckDB query layer | `pyproject.toml` `duckdb>=1`; in-process queries over the parquet files |
-| Hishel cache | `pyproject.toml` `hishel>=0.0.30` — on-disk HTTP response cache |
+| Custom JSON HTTP cache | `egxdata/http.py` — custom JSON cache class wrapping `httpx`; no `hishel` dep |
 | Researcher actor | typer CLI entry-point implies human local-shell invocation; the README's "live-tracking" section confirms the human-in-the-loop ledger workflow |
 | Broker actor (out-of-band) | README § "The only meaningful next step" steps 1–3: *"Place actual trades via your broker / Log fills via egx live-add-fill / Log deposits via egx live-add-deposit"* — broker is **not** in code; flows are human-transcribed |
-| Zero secrets | grep `'api[_-]?key|password|secret|token'` in `egxdata/**/*.py` returns no hits; no `.env*` files in repo |
+| Zero secrets | grep `'api[_-]?key\|password\|secret\|token'` in `egxdata/**/*.py` returns no hits; no `.env*` files in repo |
 | Zero auth surface | No HTTP server, no `flask`/`fastapi`/`django` imports, no `@auth0`/`@clerk`/JWT/OIDC imports |
 
 ## Notes for downstream consumers
 
-- **`/threat-model`** will find a narrow attack surface: no HTTP server → no Spoofing on inbound auth; no PII transmitted across the Public-internet boundary → low Info-Disclosure risk on outbound traffic; the most interesting surface is **HTML-scraping fragility** (`stockanalysis.com`) and **untrusted-data → in-process parse** (selectolax / lxml / html5lib on attacker-modifiable upstream HTML).
+- **`/threat-model`** will find a narrow attack surface: no HTTP server → no Spoofing on inbound auth; no PII transmitted across the Public-internet boundary → low Info-Disclosure risk on outbound traffic; the most interesting surface is **HTML-scraping fragility** (`stockanalysis.com`) and **untrusted-data → in-process parse** (pd.read_html using lxml / html5lib backend on attacker-modifiable upstream HTML).
 - **`/compliance-check`** will find no cross-border transfers initiated by this codebase (all outbound is to public, unauthenticated data sources; no DPA needed for read-only public-data scraping). The PII surface is purely local-only (live ledger) — no GDPR processor-controller relationship to model.
 - **No internal sub-boundaries inside the Local zone** is a deliberate choice for v1. If a future version daemonises the data refresh under a separate OS user or splits the live ledger into a separate process, re-run `/dfd xadvisor` to add the new boundary.
 
