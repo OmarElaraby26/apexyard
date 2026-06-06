@@ -33,7 +33,7 @@ C4Container
     Rel(sources, sqlite, "Upserts tickers + refresh log", "SQL")
     Rel(sources, parquet, "Writes per-ticker parquet", "filesystem")
     Rel(portfolio, sqlite, "Reads universe + live ledger", "SQL")
-    Rel(portfolio, parquet, "Reads OHLCV + fundamentals + macro", "DuckDB / pyarrow")
+    Rel(portfolio, parquet, "Reads OHLCV + fundamentals + macro", "pyarrow")
     Rel(cli, sqlite, "live-add-deposit / live-add-fill / live-status", "SQL")
 ```
 
