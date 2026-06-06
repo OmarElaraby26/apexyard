@@ -1,8 +1,32 @@
 # xadvisor — Validation Roadmap
 
-**Date**: 2026-06-03
+**Date**: 2026-06-06
 **Author**: Omar Elaraby
-**Status**: locked (convergence reached over 6-round technical review chain on 2026-06-03)
+**Status**: locked (convergence reached over 6-round technical review chain on 2026-06-03; Phase 2 SURVIVE verdict 2026-06-06)
+
+## Project state (as of 2026-06-04)
+
+Phase 1 + Phase 1.5 are **complete**. Verdict: **AMBIGUOUS** per the pre-committed framework in [AgDR-0002](docs/agdr/AgDR-0002-success-criteria-framework.md), calibrated retrospectively in [AgDR-0003](docs/agdr/AgDR-0003-phase-1-5-retrospective-calibration.md).
+
+The headline finding from Phase 1.5:
+
+> **Fundamental lookahead was material** — IC dropped from 0.112 → 0.047 in the 2020-2025 window when cleaned. In the 2022-2025 window with PIT fundamentals, the signal recovers to IC = 0.144 (t = 3.79, n = 14). Real signal survives cleanup, materially weaker than the contaminated baseline.
+
+The project has crossed a threshold:
+
+> **From "signal discovery" to "economic validation."** The current question is no longer *"does any signal exist at all?"* — it is *"is the surviving signal economically meaningful after costs and relative to passive alternatives?"*
+
+### Signal existence ≠ investability (LOCKED, AgDR-0003 Decision 2)
+
+The Phase 1.5 result supports:
+- Evidence that a ranking signal may exist (IC = 0.144, t = 3.79)
+
+The Phase 1.5 result does NOT support:
+- Evidence of investability after costs
+- Evidence of persistent alpha vs a tradeable passive alternative
+- Evidence of robustness across regimes
+
+These are different claims requiring different evidence. Phase 1.75 (below) exists to test the second set of claims. Phase 2 stays gated until Phase 1.75 lands a favourable verdict.
 
 ## Premise
 
@@ -107,47 +131,111 @@ If feasible: ablation runs (fix one bias at a time) to attribute the delta direc
 | Signal survives ambiguously (1-2 axes weak) | Pause; targeted follow-up to disambiguate before Phase 2 |
 | Signal collapses on multiple axes | Research success — document outcome, archive system as research artifact, or pivot to passive Shariah index |
 
-## Phase 2+ — Backlog (do NOT promote pre-1.5)
+## Phase 1.75 — Economic Validation (NEW, gates Phase 2)
 
-Per reviewer + worker convergence, do not pre-commit Phase 2 engineering. Building elaborate validation machinery on a signal that doesn't survive PIT cleanup is the canonical quant project failure mode. Backlog items, gated on Phase 1.5 verdict:
+Phase 1.5 produced an AMBIGUOUS verdict. Per AgDR-0002 outcome rules, AMBIGUOUS → "Pause; targeted follow-up to disambiguate before any Phase 2 commitment." The targeted follow-up is now formally named **Phase 1.75 — Economic Validation**.
 
-| # | Title | Promote when |
-|---|-------|--------------|
-| E | Walk-forward purged CV + embargo validation harness | 1.5 verdict ≥ ambiguous-survive |
-| F | Transaction cost + EGX liquidity model | 1.5 verdict ≥ ambiguous-survive |
-| G | Live OOS tracking continuation (multi-year, parallel) | Already running — continue regardless |
-| H | Multiple-testing correction (Bonferroni / FDR / White / SPA) | Promote IF Phase 4 factor expansion ever happens |
-| I | Signal half-life / decay measurement | 1.5 verdict ≥ survive |
-| J | Factor attribution (which composite leg drives the edge) | 1.5 verdict ≥ survive |
+Phase 1.75 is NOT Phase 2. It answers a different question:
 
-Filed as a single backlog memo ticket, not as active tickets. Promotion = a 1.5-verdict review meeting + an explicit decision.
+| Phase | Question |
+|---|---|
+| Phase 1 + 1.5 | Does any signal exist after honest data cleanup? |
+| **Phase 1.75 (here)** | **Is the surviving signal economically meaningful after costs and vs passive alternatives?** |
+| Phase 2 (gated) | Does the validated signal warrant a full walk-forward + cost + factor-expansion harness? |
 
-## Phase 3 — Live OOS (parallel, ongoing)
+### Tickets (filed 2026-06-04)
 
-Live tracking continues regardless of 1.5 outcome. It is the only ground truth in the long run. No amount of offline validation replaces years of real-money observation.
+| # | Title | GH issue | Priority | Blocked by |
+|---|-------|----------|----------|------------|
+| A | Model EGX transaction costs | [#72](https://github.com/OmarElaraby26/xadvisor/issues/72) | CLOSED | — |
+| B | Establish benchmark framework | [#73](https://github.com/OmarElaraby26/xadvisor/issues/73) | CLOSED | — |
+| C | Compute net alpha vs benchmark after costs | [#74](https://github.com/OmarElaraby26/xadvisor/issues/74) | CLOSED | — |
+| D | Filing-date sensitivity for PIT fundamentals IC | [#75](https://github.com/OmarElaraby26/xadvisor/issues/75) | CLOSED | — |
+| E | Pre-2022 Shariah membership investigation (spike) | [#76](https://github.com/OmarElaraby26/xadvisor/issues/76) | CLOSED | — |
+| F | Lightweight within-2022 sub-regime analysis | [#77](https://github.com/OmarElaraby26/xadvisor/issues/77) | CLOSED | — |
 
-## Phase 4 — Reassess factor expansion (gated)
+### Phase 1.75 → Phase 2 gate criteria (locked in AgDR-0003 Decision 3)
 
-Only after Phase 1.5 AND Phase 3 produce converging "yes there is real edge" evidence. Otherwise skipped indefinitely. This is the phase that breaks the anti-scope freeze if reached.
+Phase 2 promotion happens IF AND ONLY IF all of these are true after Phase 1.75 lands:
 
-## Roadmap structure summary
+1. Cost-aware net alpha (#74) is positive vs the chosen benchmark
+2. Filing-date sensitivity (#75) shows the cleaned IC is robust (not fragile to timing assumptions)
+3. **New calibration AgDR-0004 written BEFORE reading the Phase 1.75 net results** (process correction from AgDR-0003 order violation — same mistake must NOT repeat)
+4. Explicit promotion decision in a review meeting referencing AgDR-0001 anti-scope freeze for unfreeze authorization
+
+If those criteria are not met, Phase 2 stays in backlog ([#70](https://github.com/OmarElaraby26/xadvisor/issues/70)).
+
+### What Phase 1.75 will NOT do
+
+- Will NOT promote Phase 2 backlog automatically — gate decision is explicit
+- Will NOT unfreeze AgDR-0001 anti-scope (no new factors, no optimizer, no regime switching, no ML)
+- Will NOT extend the clean window pre-2022 unless spike #76 produces AVAILABLE/PARTIAL data
+- Will NOT change strategy complexity (Top-10 EW frozen until Phase 2 unlock)
+
+## Phase 2 — Verdict: SURVIVE (closed 2026-06-06)
+
+Phase 2 evaluation landed across five closed tickets (#92–#96). Overall verdict: **SURVIVE** — the system remains worthy of continued observation. SURVIVE does NOT mean operationally validated. Signal existence ≠ investability (AgDR-0003 Decision 2, load-bearing). Phase 3 authorized.
+
+Verdict issue: [xadvisor#106](https://github.com/OmarElaraby26/xadvisor/issues/106) — CLOSED.
+
+## Phase 3 — Monitoring + evidence accumulation (ACTIVE)
+
+**Phase 3 is NOT operational deployment.** It is a structured evidence-accumulation phase governed by the charter at `docs/phase-3-charter.md`.
+
+- **Cadence**: quarterly reviews
+- **Metrics**: live IC, live alpha vs benchmark, turnover, max drawdown
+- **Phase 4 trigger**: time-based + evidence-based only — 8 quarters minimum observation window, no numerical performance threshold
+- **AgDR-0001 anti-scope freeze**: REMAINS IN FORCE throughout Phase 3
+- **First review**: 2026-09-06
+
+Canonical failure mode guard: if quarterly reviews start generating new tickets each quarter, Phase 3 has silently reverted to Phase 2. Charter explicitly forbids ad-hoc tickets from quarterly reviews.
+
+Charter: [docs/phase-3-charter.md](docs/phase-3-charter.md) (committed 2026-06-06)
+
+## Phase 4 — Factor expansion (FROZEN)
+
+Only unlocks when: minimum Phase 3 observation window reached AND formal evidence review scheduled via the Phase 4 trigger mechanism in the charter. This is the phase that breaks the AgDR-0001 anti-scope freeze if reached. NOT before.
+
+## Roadmap structure summary (updated 2026-06-06)
 
 ```
-Spike (Shariah data obtainability)
-  └─► [PASS] ──► Task B (PIT Shariah membership) ──┐
-Task A (PIT fundamentals) ───────────────────────────┼──► Task D (Phase 1.5 gate)
-Task C (Historical universe) ────────────────────────┘         │
-                                                                ▼
-                                                          DECISION
-                                                          /        \
-                                              [SURVIVE]              [COLLAPSE]
-                                                  │                       │
-                                       Promote Phase 2 backlog    Archive / pivot
-                                       (Tasks E, F, I, J)         (research success)
-                                                  │
-                                          [Phase 3 continues in parallel always]
-                                                  │
-                                       [Phase 4 gated on 1.5 + 3 convergence]
+COMPLETE — Phase 1:
+  Spike #31 (Shariah PIT) ──► PASS ──► Task #33 (PIT Shariah membership) ──┐
+  Task #32 (PIT fundamentals) ──────────────────────────────────────────────┼──► Phase 1.5 gate (#35)
+  Task #34 (Historical research universe) ──────────────────────────────────┘         │
+                                                                                       ▼
+                                                                              VERDICT: AMBIGUOUS
+                                                                              (1 PASS / 2 WEAK / 1 NOT-COMPUTED)
+                                                                                       │
+                                                              ┌────────────────────────┴────────────────────────┐
+                                                              ▼                                                  ▼
+                                                  [WAS SURVIVE]                                       [WAS COLLAPSE]
+                                                       │                                                  │
+                                                       (not the verdict)                                  (not the verdict)
+                                                                                                          │
+                                                          ┌─── ACTUAL PATH: AMBIGUOUS ───┐
+                                                          ▼                              ▼
+                                                  Phase 1.75 (NEW — economic validation, this section above)
+                                                          │
+                                                          ▼ (after Phase 1.75 results land)
+                                                  Phase 2 GATE — all 4 criteria passed
+                                                  (cost-net-positive + robust + AgDR-0004 + explicit decision)
+                                                          │
+                                                          ▼
+                                              PHASE 2 VERDICT: SURVIVE (#106, closed 2026-06-06)
+                                              "Remains worthy of continued observation"
+                                              Signal existence ≠ investability (still load-bearing)
+                                                          │
+                                                          ▼
+                                              Phase 3 — monitoring + evidence accumulation (ACTIVE)
+                                              Quarterly cadence · 4 metrics · 8-quarter window
+                                              Charter: docs/phase-3-charter.md
+                                              First review: 2026-09-06
+                                              AgDR-0001 anti-scope freeze: REMAINS IN FORCE
+                                                          │
+                                                          ▼ (only via time+evidence trigger, no numerical threshold)
+                                              Phase 4 — factor expansion (FROZEN)
+                                              Breaks AgDR-0001 freeze if/when triggered
 ```
 
 ## What was decided during the review chain (artifact trail)
@@ -172,24 +260,37 @@ The 6-round chain (2026-06-03) extracted these load-bearing decisions:
 - Does not add complexity to the production strategy
 - Does not replace live OOS tracking
 
-## Filing status (2026-06-03)
+## Filing status (updated 2026-06-06)
 
-All Phase 1 + Phase 1.5 tickets filed. AgDRs committed. Anti-scope locked. Pre-committed evaluation framework locked.
+Phase 1 + 1.5 + 1.75 + 2 complete and **closed**. Phase 3 ACTIVE. AgDR-0001 freeze in force.
 
 | Artifact | Location | Status |
 |----------|----------|--------|
-| Spike — Shariah PIT data obtainability | [OmarElaraby26/xadvisor#31](https://github.com/OmarElaraby26/xadvisor/issues/31) | Filed |
-| Task A — PIT fundamentals | [OmarElaraby26/xadvisor#32](https://github.com/OmarElaraby26/xadvisor/issues/32) | Filed |
-| Task B — PIT Shariah membership | [OmarElaraby26/xadvisor#33](https://github.com/OmarElaraby26/xadvisor/issues/33) | Filed (blocked by #31) |
-| Task C — Historical research universe | [OmarElaraby26/xadvisor#34](https://github.com/OmarElaraby26/xadvisor/issues/34) | Filed |
-| Task D — Phase 1.5 re-baseline gate | [OmarElaraby26/xadvisor#35](https://github.com/OmarElaraby26/xadvisor/issues/35) | Filed (blocked by #32, #33, #34) |
-| AgDR-0001 — Anti-scope freeze | [docs/agdr/AgDR-0001-anti-scope-freeze-strategy.md](docs/agdr/AgDR-0001-anti-scope-freeze-strategy.md) | Committed |
-| AgDR-0002 — Success criteria framework | [docs/agdr/AgDR-0002-success-criteria-framework.md](docs/agdr/AgDR-0002-success-criteria-framework.md) | Committed |
+| Spike — Shariah PIT data obtainability | [xadvisor#31](https://github.com/OmarElaraby26/xadvisor/issues/31) | CLOSED |
+| Task — PIT fundamentals | [xadvisor#32](https://github.com/OmarElaraby26/xadvisor/issues/32) | CLOSED |
+| Task — PIT Shariah membership | [xadvisor#33](https://github.com/OmarElaraby26/xadvisor/issues/33) | CLOSED |
+| Task — Historical research universe | [xadvisor#34](https://github.com/OmarElaraby26/xadvisor/issues/34) | CLOSED |
+| Phase 1.5 re-baseline gate | [xadvisor#35](https://github.com/OmarElaraby26/xadvisor/issues/35) | CLOSED — verdict **AMBIGUOUS** |
+| Phase 1.5 report | [workspace/xadvisor/docs/phase-1-5-rebaseline-report.md](../../workspace/xadvisor/docs/phase-1-5-rebaseline-report.md) | Committed in xadvisor repo |
+| Phase 1.75 — Cost model | [xadvisor#72](https://github.com/OmarElaraby26/xadvisor/issues/72) | CLOSED |
+| Phase 1.75 — Benchmark framework | [xadvisor#73](https://github.com/OmarElaraby26/xadvisor/issues/73) | CLOSED |
+| Phase 1.75 — Net alpha vs benchmark after costs | [xadvisor#74](https://github.com/OmarElaraby26/xadvisor/issues/74) | CLOSED |
+| Phase 1.75 — Filing-date sensitivity | [xadvisor#75](https://github.com/OmarElaraby26/xadvisor/issues/75) | CLOSED |
+| Phase 1.75 — Pre-2022 Shariah spike | [xadvisor#76](https://github.com/OmarElaraby26/xadvisor/issues/76) | CLOSED |
+| Phase 1.75 — Within-2022 sub-regime | [xadvisor#77](https://github.com/OmarElaraby26/xadvisor/issues/77) | CLOSED |
+| Phase 2 verdict gate | [xadvisor#106](https://github.com/OmarElaraby26/xadvisor/issues/106) | CLOSED — verdict **SURVIVE** |
+| Phase 2 backlog memo | [xadvisor#70](https://github.com/OmarElaraby26/xadvisor/issues/70) | CLOSED — superseded by Phase 3 charter |
+| **Phase 3 charter** | [docs/phase-3-charter.md](docs/phase-3-charter.md) | Committed 2026-06-06 |
+| **Phase 3 charter ticket** | [xadvisor#108](https://github.com/OmarElaraby26/xadvisor/issues/108) | In QA |
+| AgDR-0001 — Anti-scope freeze | [docs/agdr/AgDR-0001-anti-scope-freeze-strategy.md](docs/agdr/AgDR-0001-anti-scope-freeze-strategy.md) | **IN FORCE** |
+| AgDR-0002 — Success criteria framework | [docs/agdr/AgDR-0002-success-criteria-framework.md](docs/agdr/AgDR-0002-success-criteria-framework.md) | In force |
+| AgDR-0003 — Phase 1.5 retrospective calibration | [docs/agdr/AgDR-0003-phase-1-5-retrospective-calibration.md](docs/agdr/AgDR-0003-phase-1-5-retrospective-calibration.md) | Committed |
+| AgDR-0004 — Phase 1.75 calibration | TBD | Written before Phase 1.75 net-alpha results read |
 
-Phase 2+ items remain in the backlog section of this document — not filed as active tickets. Promotion = a Phase 1.5 verdict review meeting + explicit `/decide` AgDR-0004+ authorising the next-phase work.
+## Next action (updated 2026-06-06)
 
-## Next action
+Phase 3 is active. First quarterly review: **2026-09-06**.
 
-Start the spike (#31). The spike disposition gates everything else in Phase 1. Begin with a quick survey of public + commercial Shariah-screening data sources, budget 3 days, write the disposition memo, then promote or pivot.
+Immediate: track live IC, live alpha vs benchmark, turnover, max drawdown. Do NOT create new tickets from monitoring observations — research notes go in the quarterly review log only.
 
-The next high-value artifact after the spike is the Phase 1.5 bias-attribution report — not another planning round.
+AgDR-0001 anti-scope freeze remains in force. Phase 4 trigger is time-based only (8 quarters minimum), not performance-based.
