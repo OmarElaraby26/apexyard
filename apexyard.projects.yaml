@@ -26,6 +26,23 @@ projects:
       - finance
     ticket_prefix: GH
 
+  - name: xadvisor-ocr
+    repo: OmarElaraby26/xadvisor-ocr
+    workspace: workspace/xadvisor-ocr
+    docs: projects/xadvisor-ocr
+    status: handover
+    tier: P1
+    roles:
+      - tech-lead
+      - backend-engineer
+      - platform-engineer
+      - qa-engineer
+    tags:
+      - python
+      - ocr
+      - library
+    ticket_prefix: GH
+
 defaults:
   status: active
   tier: P1
