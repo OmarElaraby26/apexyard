@@ -31,7 +31,6 @@ projects:
     workspace: workspace/xadvisor-ocr
     docs: projects/xadvisor-ocr
     status: handover
-    tier: P1
     roles:
       - tech-lead
       - backend-engineer

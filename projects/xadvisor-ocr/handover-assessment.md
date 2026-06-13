@@ -15,6 +15,7 @@
 ## Current State
 
 ### Tech stack
+
 - Language: Python 3.12
 - Runtime: Python (pure library — no HTTP surface)
 - Framework: None (library; no web/DI/persistence framework)
@@ -25,16 +26,19 @@
 - Production deps: opencv-python-headless, numpy, pytesseract
 
 ### Build status
+
 - `pip install`: **blocked** — no `pyproject.toml` or `setup.py` exists; README claims `pip install -e .` but it would fail
 - `pytest (fast tier)`: likely ok — CI ran recently; coverage gate 25%
 - `pytest (slow tier)`: requires Tesseract system dep; coverage gate 75%; 81% reported in README
 - `lint`: not configured — no lint step exists anywhere
 
 ### Test coverage
+
 - Fast tier: ≥25% (CI gate), 56% reported in README
 - Full (both tiers): ≥75% (CI gate), 81% reported in README
 
 ### Repo activity
+
 - Commits in last 90 days: all commits (repo is 4 days old as of assessment)
 - Open issues: 0
 - Open PRs: 0
@@ -61,23 +65,27 @@ See AgDR-0042 for the scoring rationale and v1 thresholds.
 ## Quality Risks
 
 ### Security
+
 - No secrets or API keys visible in the codebase (library uses only local Tesseract — no external API calls in the packaged code)
 - Benchmark scripts reference Gemini (historical — early commits; not present in current `extractor/` package)
 - No `.env` or `.env.example` found
 
 ### Dependencies
+
 - **Critical: no `pyproject.toml` or `setup.py`** — README documents `pip install -e .` but the package is not installable as described; this is a blocking gap before any consumer can onboard
 - Production deps (opencv-python-headless, numpy, pytesseract) are **unpinned** — only installed ad-hoc in CI via `pip install …`; no version constraints committed
 - `requirements-dev.txt` pins only `pytest>=8.0` and `pytest-cov>=4.0`
 - No dependency audit possible without a manifest
 
 ### Technical debt
+
 - `local_extractor.py` (45 KB) and `local_extractor_v2.py` at repo root are noted as "internal orchestrator" but not inside the `extractor/` package — creates an awkward import cycle workaround via `__getattr__` in `extractor/__init__.py`
 - Scratch / debug files committed to repo root: `debug_*.png`, `*_annotated.png`, `1.jpg` through `7.jpg`, `MCQE_crop.png`, `ARCC_crop.png`, plus `observations.txt`, `orders.json`, `orders5.json`, `orders_lite.json`
 - `local_extractor_v2.py` suggests an in-progress refactor that may conflict with the stable `0.1.0` API contract
 - No `pyproject.toml` → no package metadata, no version anchor for tooling
 
 ### Operational
+
 - CI is active and two-tiered — healthy signal
 - No lint CI step — code quality relies entirely on author discipline
 - No publish/release pipeline — package is source-only (`pip install -e .`) with no PyPI or registry workflow
@@ -85,12 +93,14 @@ See AgDR-0042 for the scoring rationale and v1 thresholds.
 ## Integration Plan
 
 ### Roles that apply
+
 - `tech-lead` (always)
 - `backend-engineer` (pure Python library, domain logic in `extractor/`)
 - `platform-engineer` (CI pipeline work needed — lint step, publish pipeline)
 - `qa-engineer` (verify ACs on merged PRs — especially the two-tier OCR test gate)
 
 ### Workflows that kick in
+
 - [x] PR workflow (`.claude/rules/pr-workflow.md`) — every change goes through a PR
 - [x] AgDR for technical decisions
 - [x] Code Reviewer agent on every PR
@@ -98,6 +108,7 @@ See AgDR-0042 for the scoring rationale and v1 thresholds.
 - [ ] `/audit-deps` on adoption and monthly thereafter
 
 ### Hooks to enable
+
 - [x] `block-git-add-all`
 - [x] `block-main-push`
 - [x] `validate-branch-name`
@@ -106,6 +117,7 @@ See AgDR-0042 for the scoring rationale and v1 thresholds.
 - [x] `check-secrets`
 
 ### CI templates to copy in
+
 - [ ] `golden-paths/pipelines/security.yml`
 - [ ] `golden-paths/pipelines/pr-title-check.yml`
 - Note: `golden-paths/pipelines/ci.yml` (TypeScript-oriented) does not apply — keep the existing Python-native `test.yml`; add lint and security as separate jobs
@@ -122,6 +134,7 @@ See AgDR-0042 for the scoring rationale and v1 thresholds.
     - tech-lead
     - backend-engineer
     - platform-engineer
+    - qa-engineer
 ```
 
 ## Next Steps
