@@ -9,7 +9,7 @@
 #
 # Mechanism:
 #   - Fires on `git commit -m` AND `git push` (per the matcher entries
-#     in .apexyard/settings.json)
+#     in .claude/settings.json)
 #   - For each staged (commit) or to-be-pushed (push) .apexyard/agents/*.md
 #     file:
 #       1. Read its current model: line

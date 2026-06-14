@@ -125,21 +125,6 @@ run_adapter() {
   sync_kind_copy "$tool" "$kind"
 }
 
-# Restore protected files after syncing a kind (some kinds may overlap at
-# the top level, but protected entries are always tool roots).
-restore_protected() {
-  local tool="$1"
-  local protected_list="${PROTECTED[$tool]:-}"
-  [ -n "$protected_list" ] || return 0
-
-  local tool_dir="$REPO_ROOT/${TOOL_DIRS[$tool]}"
-  local item
-  for item in $protected_list; do
-    # Nothing to do — sync only touches kinds, not the tool root.
-    :
-  done
-}
-
 # Sync one tool directory.
 sync_tool() {
   local tool="$1"
@@ -148,14 +133,12 @@ sync_tool() {
 
   echo "ApexYard: syncing .apexyard/ → ${TOOL_DIRS[$tool]}/"
 
-  mkdir -p "$REPO_ROOT/.$tool"
+  mkdir -p "$REPO_ROOT/${TOOL_DIRS[$tool]}"
 
   local kind
   for kind in $kinds; do
     run_adapter "$tool" "$kind"
   done
-
-  restore_protected "$tool"
 }
 
 # Determine which tools to sync.

@@ -1,6 +1,6 @@
 # apexyard/safety-hooks
 
-**Production-grade safety hooks for Claude Code.** Drop this `.apexyard/` into any project, merge the `.apexyard/settings.snippet.json` entries into your `.apexyard/settings.json`, and get seven shell hooks that mechanically prevent the most common git foot-guns: leaked secrets, direct pushes to main, `git add -A` over the whole tree, pushes without local lint/test, commits referencing non-existent issues, malformed PR titles, malformed branch names.
+**Production-grade safety hooks for Claude Code.** Drop this `.apexyard/` into any project, merge the `.apexyard/settings.snippet.json` entries into your `.claude/settings.json`, and get seven shell hooks that mechanically prevent the most common git foot-guns: leaked secrets, direct pushes to main, `git add -A` over the whole tree, pushes without local lint/test, commits referencing non-existent issues, malformed PR titles, malformed branch names.
 
 > One tooth of the [ApexYard](https://github.com/me2resh/apexyard) governance comb — extracted as a standalone marketplace plugin for individual engineers who want the safety net without forking the full framework. Read on for what's included, the 30-second quickstart, and the graduation path to the full ApexYard fork.
 
@@ -29,7 +29,7 @@
 
 **Recommended wiring:**
 
-See `.apexyard/settings.snippet.json` — copy the relevant `PreToolUse` entries into your project's `.apexyard/settings.json`.
+See `.apexyard/settings.snippet.json` — copy the relevant `PreToolUse` entries into your project's `.claude/settings.json`.
 
 ## 30-second quickstart
 
@@ -39,7 +39,7 @@ See `.apexyard/settings.snippet.json` — copy the relevant `PreToolUse` entries
    /plugin install apexyard/safety-hooks
    ```
 
-2. Merge the `PreToolUse` entries from `.apexyard/settings.snippet.json` into your `.apexyard/settings.json` (your file already exists; you're appending to its `hooks.PreToolUse` array).
+2. Merge the `PreToolUse` entries from `.apexyard/settings.snippet.json` into your `.claude/settings.json` (your file already exists; you're appending to its `hooks.PreToolUse` array).
 
 3. Start your next Claude Code session. From this point:
 

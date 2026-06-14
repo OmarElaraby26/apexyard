@@ -21,8 +21,9 @@ SRC_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 LIB_CHAIN="$SRC_ROOT/.apexyard/hooks/_lib-migration-chain.sh"
 REAL_V1_V2="$SRC_ROOT/.apexyard/migrations/v1.2.0-to-v1.3.0.sh"
 REAL_V2_V3="$SRC_ROOT/.apexyard/migrations/v1.3.0-to-v1.4.0.sh"
+REAL_V3_V4="$SRC_ROOT/.apexyard/migrations/v3.1.4-to-v4.0.0.sh"
 
-for f in "$LIB_CHAIN" "$REAL_V1_V2" "$REAL_V2_V3"; do
+for f in "$LIB_CHAIN" "$REAL_V1_V2" "$REAL_V2_V3" "$REAL_V3_V4"; do
   [ -f "$f" ] || { echo "FAIL: missing $f" >&2; exit 1; }
 done
 
@@ -217,6 +218,48 @@ if [ "$rc1" -eq 0 ] && [ "$rc2" -eq 0 ]; then
   mark_pass "real v1.2.0→v1.3.0 idempotent no-op on single-fork adopter (rc1=$rc1 rc2=$rc2)"
 else
   mark_fail "real v1.2.0→v1.3.0 single-fork" "rc1=$rc1 rc2=$rc2"
+fi
+
+rm -rf "$SB"
+
+# ---------------------------------------------------------------------------
+# Case 5b: real v3.1.4→v4.0.0 migration moves adopter config + session state
+# and is idempotent on a single-fork adopter.
+# ---------------------------------------------------------------------------
+SB=$(mktemp -d) && SB=$(cd "$SB" && pwd -P)
+build_fork "$SB" "v3.1.4,v4.0.0"
+# Replace the stub v3.1.4-to-v4.0.0 with the real script and copy the sync tool.
+cp "$REAL_V3_V4" "$SB/.apexyard/migrations/v3.1.4-to-v4.0.0.sh"
+chmod +x "$SB/.apexyard/migrations/v3.1.4-to-v4.0.0.sh"
+mkdir -p "$SB/bin"
+cp "$SRC_ROOT/bin/apexyard-sync-tool-dirs" "$SB/bin/apexyard-sync-tool-dirs"
+chmod +x "$SB/bin/apexyard-sync-tool-dirs"
+
+# Simulate old .claude/ layout with adopter data.
+mkdir -p "$SB/.claude/session/reviews"
+echo '{"migration_label":"infra-migration"}' > "$SB/.claude/project-config.json"
+echo '#42' > "$SB/.claude/session/current-ticket"
+echo 'approved' > "$SB/.claude/session/reviews/42-rex.approved"
+
+(
+  cd "$SB" || exit 99
+  APEXYARD_MIGRATION_QUIET=1 bash .apexyard/migrations/v3.1.4-to-v4.0.0.sh
+)
+rc1=$?
+(
+  cd "$SB" || exit 99
+  APEXYARD_MIGRATION_QUIET=1 bash .apexyard/migrations/v3.1.4-to-v4.0.0.sh
+)
+rc2=$?
+
+if [ "$rc1" -eq 0 ] && [ "$rc2" -eq 0 ] \
+   && [ -f "$SB/.apexyard/project-config.json" ] \
+   && [ -f "$SB/.apexyard/session/current-ticket" ] \
+   && [ -f "$SB/.apexyard/session/reviews/42-rex.approved" ] \
+   && [ ! -d "$SB/.claude/session" ]; then
+  mark_pass "real v3.1.4→v4.0.0 moves config + session and is idempotent (rc1=$rc1 rc2=$rc2)"
+else
+  mark_fail "real v3.1.4→v4.0.0 single-fork" "rc1=$rc1 rc2=$rc2; check .apexyard/project-config.json, .apexyard/session/, .claude/session/"
 fi
 
 rm -rf "$SB"

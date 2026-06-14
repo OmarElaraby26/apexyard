@@ -16,7 +16,7 @@
 # see AgDR-0062 for why it isn't on by default (single-account maintainers would
 # be locked out).
 #
-# Wired in .apexyard/settings.json PreToolUse for:
+# Wired in .claude/settings.json PreToolUse for:
 #   matcher: Write    (catches direct file writes)
 #   matcher: Bash     (catches shell redirections, printf, tee, etc.)
 #

@@ -208,8 +208,7 @@ write_manifest() {
       [ "$rel" = "EXTRACTION_MANIFEST.json" ] && continue
       [ "$rel" = "README.md" ] && continue
       [ "$rel" = "PLUGIN.json" ] && continue
-      [ "$rel" = ".claude/settings.snippet.json" ] && continue
-    [ "$rel" = ".apexyard/settings.snippet.json" ] && continue
+      [ "$rel" = ".apexyard/settings.snippet.json" ] && continue
       if [ "$first" -eq 1 ]; then
         first=0
       else
