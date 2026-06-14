@@ -65,6 +65,7 @@ The override applies once. After a successful sync, the anchor is rewritten from
 |-----------|---------------|---------|
 | `v1.2.0-to-v1.3.0.sh` | Moves `onboarding.yaml` and `workspace/<name>/` from the public fork to the private sibling repo (split-portfolio v2). Writes the `.apexyard-fork` anchor. Adds the `portfolio.{onboarding,workspace_dir}` keys to `.apexyard/project-config.json`. Updates `.gitignore`. | Split-portfolio adopters on the v1 layout. No-op for single-fork adopters. |
 | `v1.3.0-to-v1.4.0.sh` | Currently a no-op placeholder. v1.4.0-cycle tickets that need per-adopter migrations (e.g. templates/tickets reorg) will populate the body before release-cut. | TBD when v1.4.0 ships. |
+| `v3.1.4-to-v4.0.0.sh` | Model-neutral ApexYard refactor: moves adopter-local `.claude/project-config.json` to `.apexyard/project-config.json`, moves `.claude/session/` to `.apexyard/session/`, and regenerates `.claude/` and `.kimi-code/` from `.apexyard/` via `bin/apexyard-sync-tool-dirs`. | All adopters upgrading from pre-model-neutral layout. No-op if already on `.apexyard/` canonical layout. |
 
 When a future release adds a migration, this table is the source of truth — the release PR template requires a row to be added here.
 

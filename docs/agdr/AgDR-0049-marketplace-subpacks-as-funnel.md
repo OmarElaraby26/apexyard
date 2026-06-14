@@ -6,7 +6,7 @@
 
 ApexYard's value composition — roles + workflows + templates + hooks + skills + rules + handbooks + portfolio + memory + audits — is delivered by **forking** the upstream framework into an ops repo and treating that fork as the governance surface for a portfolio of managed projects. The integrated whole depends on the portfolio registry (`apexyard.projects.yaml`), the role definitions in `roles/`, the bootstrap-skill exemption, the two-marker merge gate, the `_lib-portfolio-paths.sh` resolver, and the per-project `projects/<name>/` doc convention. None of that fits a drop-in plugin shape.
 
-Claude Code ships a marketplace for plugins — additive `.claude/` drop-ins that a project can install without forking anything. Users who'd benefit from ApexYard's audit suite (`/launch-check` + 8 deep-dives) or its safety hooks (secrets / main-push / git-add-all / pre-push / commit-refs / PR-title / branch-name validation) are not all CTO-class operators ready to fork a 50+ skill framework; many are individual engineers who want one specific capability dropped into their existing project.
+Claude Code ships a marketplace for plugins — additive `.claude/` drop-ins that a project can install without forking anything. (ApexYard's canonical source of truth is now tool-neutral `.apexyard/`; `.claude/` is the generated Claude Code registration layer.) Users who'd benefit from ApexYard's audit suite (`/launch-check` + 8 deep-dives) or its safety hooks (secrets / main-push / git-add-all / pre-push / commit-refs / PR-title / branch-name validation) are not all CTO-class operators ready to fork a 50+ skill framework; many are individual engineers who want one specific capability dropped into their existing project.
 
 The strategic question is whether to (a) ignore the marketplace surface entirely, (b) publish the entire framework as a single mega-plugin (doesn't fit — the framework IS the ops repo), or (c) extract narrowly-scoped sub-packs that stand alone as plugins AND pitch the full framework as a graduation path. Option (c) — sub-packs as a funnel — is the discovery vector for individual engineers to encounter ApexYard, run one sub-pack, and self-select into the full framework when their scope grows.
 
@@ -56,8 +56,8 @@ The performance constraint from the ticket (and operator memory) makes the extra
 
 | Option | Pros | Cons |
 |--------|------|------|
-| **`marketplace/<pack>/` at repo root (chosen)** | Self-documenting on disk; mirrors the marketplace plugin shape (a `.claude/` subdir + a README + a manifest); easy to gitignore from the framework's own discovery (Wave 1 invariant test ignores nested `.apexyard/skills/`) | One more top-level dir |
-| `.claude/marketplace/<pack>/` nested under the framework's own `.claude/` | Keeps marketplace concerns under `.claude/` | Risks Claude Code's skill-discovery globber picking up the nested `.apexyard/skills/` and double-counting; Wave 1 invariant would need an explicit exclusion |
+| **`marketplace/<pack>/` at repo root (chosen)** | Self-documenting on disk; mirrors the marketplace plugin shape (an `.apexyard/` subdir + a README + a manifest); easy to gitignore from the framework's own discovery (Wave 1 invariant test ignores nested `.apexyard/skills/`) | One more top-level dir |
+| `.apexyard/marketplace/<pack>/` nested under the framework's own `.apexyard/` | Keeps marketplace concerns under `.apexyard/` | Risks tool-agnostic skill-discovery globber picking up the nested `.apexyard/skills/` and double-counting; Wave 1 invariant would need an explicit exclusion |
 | `dist/marketplace/<pack>/` as a build artefact only | Clean separation of source from artefact | Hides the extracted output from grep / git review; CI would need to commit the build output anyway, defeating the build-artefact framing |
 
 ## Decision

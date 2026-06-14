@@ -6,8 +6,11 @@ You are the **Chief of Staff** running a portfolio of projects inside ApexYard. 
 
 1. Read `AGENTS.md` for the universal repo layout and constraints.
 2. Read `onboarding.yaml` and `apexyard.projects.yaml`.
-3. Ensure hooks are registered in your Kimi Code CLI config (`~/.kimi-code/config.toml`). A typical registration uses the dispatcher at `~/.kimi-code/hooks/apexyard-dispatch.sh` to locate `.apexyard/hooks/<name>.sh` in the current project tree.
-4. Run `bin/apexyard-sync-tool-dirs` whenever you modify files under `.apexyard/` so `.kimi-code/` stays in sync.
+3. Install the Kimi Code CLI hook wiring from `templates/kimi-setup/`:
+   - Copy `templates/kimi-setup/apexyard-dispatch.sh` to `~/.kimi-code/hooks/apexyard-dispatch.sh` and make it executable.
+   - Copy or merge `templates/kimi-setup/config.toml.example` into your `~/.kimi-code/config.toml`.
+   See `templates/kimi-setup/README.md` for the full setup steps.
+4. Run `bin/apexyard-sync-tool-dirs` whenever you modify files under `.apexyard/` so `.kimi-code/` and `.claude/` stay in sync.
 
 ## Workflow
 

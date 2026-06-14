@@ -34,7 +34,7 @@ Chosen: **CI workflow (`.github/workflows/site-counts-check.yml`) plus a smoke-t
 
 The workflow runs on every PR that touches `.apexyard/skills/**`, `.apexyard/hooks/**`, `roles/**`, or `site/**`:
 
-1. Count `find .claude/skills -name SKILL.md | wc -l` → `actual_skills`
+1. Count `find .apexyard/skills -name SKILL.md | wc -l` → `actual_skills`
 2. Count `ls .apexyard/hooks/*.sh | grep -v "_lib\|/tests/" | wc -l` → `actual_hooks`
 3. Count `find roles -name "*.md" -not -name "README*" -not -path "*/agdr/*" | wc -l` → `actual_roles`
 4. Grep `site/*.html` for patterns like `>(\d+)< skills`, `>(\d+)< hooks`, `>(\d+)< roles`, `(\d+) slash commands`

@@ -604,12 +604,12 @@ The marker MUST land at `<ops_fork_root>/.apexyard/session/reviews/{number}-rex.
 
 **Resolve `MARKER_HOME` ONCE, at review start, from your initial working directory** — before any `cd`, `git clone`, `gh pr checkout`, or other tool call that might change where you are or what's anchored above you. The walk-up shape below is sensitive to `$PWD`: if you've cloned the fork into `/tmp` for inspection and `cd`'d into the clone first, the walk resolves to that throwaway tree, the marker lands in `/tmp`, and the merge gate (running from the real ops fork) cannot find it. Capture `MARKER_HOME` first; treat it as immutable for the rest of the review. This is the prose discipline; the mechanical safety net is `pin-ops-root.sh` (apexyard#381), which captures the launch-cwd ops root at SessionStart and feeds it to `_lib-ops-root.sh::resolve_ops_root` so adopters on framework versions that ship the hook get the pin automatically — the walk-up below remains as the safety net for older versions and as the resolution method when no pin exists.
 
-Resolve the ops fork root **pin-first** — the SAME strategy the merge gate uses (`_lib-ops-root.sh::resolve_ops_root`), then source the marker path helper (AgDR-0060 / #485). The session pin (`~/.apexyard/apexyard/ops-root-<session>`) points at the REAL ops fork even from inside a `workspace/<project>/` clone. A plain walk-up does NOT: in split-portfolio mode it resolves to the private portfolio sibling (which has `onboarding.yaml` + `apexyard.projects.yaml`) where `_lib-review-markers.sh` does not exist — so the marker lands in the wrong place under a bare (unqualified) name and the gate can't see it (me2resh/apexyard#559). Read the pin first; fall back to walk-up only when no valid pin exists.
+Resolve the ops fork root **pin-first** — the SAME strategy the merge gate uses (`_lib-ops-root.sh::resolve_ops_root`), then source the marker path helper (AgDR-0060 / #485). The session pin (`~/.apexyard/pins/ops-root-<session>`) points at the REAL ops fork even from inside a `workspace/<project>/` clone. A plain walk-up does NOT: in split-portfolio mode it resolves to the private portfolio sibling (which has `onboarding.yaml` + `apexyard.projects.yaml`) where `_lib-review-markers.sh` does not exist — so the marker lands in the wrong place under a bare (unqualified) name and the gate can't see it (me2resh/apexyard#559). Read the pin first; fall back to walk-up only when no valid pin exists.
 
 ```bash
 # 1. Pin-first: the pin points at the real ops fork regardless of cwd.
 OPS_ROOT=""
-PIN_FILE="${APEXYARD_OPS_PIN_DIR:-$HOME/.apexyard/apexyard}/ops-root-${CLAUDE_CODE_SESSION_ID:-}"
+PIN_FILE="${APEXYARD_OPS_PIN_DIR:-$HOME/.apexyard/pins}/ops-root-${CLAUDE_CODE_SESSION_ID:-}"
 if [ -z "${APEXYARD_OPS_DISABLE_PIN:-}" ] && [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && [ -f "$PIN_FILE" ]; then
   IFS= read -r OPS_ROOT < "$PIN_FILE" || OPS_ROOT=""
 fi

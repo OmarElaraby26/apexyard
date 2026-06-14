@@ -41,7 +41,7 @@
 #
 # Mitigation: a SessionStart hook (`pin-ops-root.sh`) captures the
 # launch-cwd ops root and writes it to
-# `${APEXYARD_OPS_PIN_DIR:-$HOME/.apexyard/apexyard}/ops-root-<SESSION_ID>`.
+# `${APEXYARD_OPS_PIN_DIR:-$HOME/.apexyard/pins}/ops-root-<SESSION_ID>`.
 # `resolve_ops_root` consults the pin BEFORE walking up. Stale pins
 # self-heal because the pinned path is re-validated against the anchor
 # conditions; a pin pointing at a dir that no longer satisfies the
@@ -129,7 +129,7 @@ resolve_ops_root() {
   # Pin check — only when the session id is available and the escape
   # hatch isn't set. Any failure here silently falls through to walk-up.
   if [ -z "${APEXYARD_OPS_DISABLE_PIN:-}" ] && [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then
-    local pin_dir="${APEXYARD_OPS_PIN_DIR:-$HOME/.apexyard/apexyard}"
+    local pin_dir="${APEXYARD_OPS_PIN_DIR:-$HOME/.apexyard/pins}"
     local pin_file="$pin_dir/ops-root-${CLAUDE_CODE_SESSION_ID}"
     if [ -f "$pin_file" ]; then
       local pinned=""

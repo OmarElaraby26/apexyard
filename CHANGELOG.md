@@ -13,6 +13,14 @@ All notable changes to ApexYard are documented here.
 - Hook paths in `.claude/settings.json` now point to `.apexyard/hooks/`.
 - Added `.github/workflows/tool-dirs-sync.yml` to guard against drift between `.apexyard/` and generated tool directories.
 
+### Added
+
+- `templates/kimi-setup/` — Kimi Code CLI dispatcher (`apexyard-dispatch.sh`) and example `config.toml` for registering ApexYard hooks in the Kimi harness.
+
+### Migration
+
+- Added `.apexyard/migrations/v3.1.4-to-v4.0.0.sh` to move adopter-local `.claude/project-config.json` → `.apexyard/project-config.json`, `.claude/session/` → `.apexyard/session/`, and regenerate `.claude/` and `.kimi-code/` from `.apexyard/`.
+
 ## [3.1.4] — 2026-06-09
 
 Patch release — game polish.

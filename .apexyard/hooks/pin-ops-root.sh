@@ -23,7 +23,7 @@
 # session start — BEFORE any sub-agent or skill has had a chance to
 # `cd` somewhere unrelated — and writing it to a per-session pin file:
 #
-#   ${APEXYARD_OPS_PIN_DIR:-$HOME/.apexyard/apexyard}/ops-root-<SESSION_ID>
+#   ${APEXYARD_OPS_PIN_DIR:-$HOME/.apexyard/pins}/ops-root-<SESSION_ID>
 #
 # `resolve_ops_root` then consults the pin BEFORE walking up. Stale
 # pins self-heal because the pinned path is re-validated against the
@@ -77,7 +77,7 @@ if [ -z "$ops_root" ]; then
   exit 0
 fi
 
-pin_dir="${APEXYARD_OPS_PIN_DIR:-$HOME/.apexyard/apexyard}"
+pin_dir="${APEXYARD_OPS_PIN_DIR:-$HOME/.apexyard/pins}"
 pin_file="$pin_dir/ops-root-${CLAUDE_CODE_SESSION_ID}"
 
 # Create the pin directory if missing. mkdir -p is idempotent.

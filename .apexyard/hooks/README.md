@@ -18,7 +18,9 @@ Hooks read tool-call JSON from stdin, use `jq` to parse, write messages to stder
 - `exit 0` with stderr — allow, warn
 - `exit 2` — block (PreToolUse) / nudge Claude with a follow-up message (PostToolUse)
 
-All hooks are registered in `.apexyard/settings.json` under `hooks.{event}[].hooks[]`. The `if:` matcher lets a single `Bash` matcher attach multiple hooks that only fire on specific command prefixes.
+All hooks are registered in `.claude/settings.json` under `hooks.{event}[].hooks[]`. The `if:` matcher lets a single `Bash` matcher attach multiple hooks that only fire on specific command prefixes.
+
+For Kimi Code CLI, the equivalent wiring lives in `templates/kimi-setup/config.toml.example` (hook registrations) and `templates/kimi-setup/apexyard-dispatch.sh` (dispatcher that locates `.apexyard/hooks/<name>.sh` in the current project tree).
 
 ## The Enforcement Layer
 
@@ -295,7 +297,7 @@ back to local context is fine — but document the trade-off.
 
 ## Settings Ordering Note
 
-The new hooks are registered in `.apexyard/settings.json` alongside the existing ones on the same `Bash(git commit *)` / `Bash(gh pr merge *)` matchers. The Claude Code harness runs all matching hooks sequentially, and **any exit-2 blocks the tool call**. Order of registration within a matcher block is execution order. Current order (GH-13 additions shown in **bold**):
+The new hooks are registered in `.claude/settings.json` alongside the existing ones on the same `Bash(git commit *)` / `Bash(gh pr merge *)` matchers. The Claude Code harness runs all matching hooks sequentially, and **any exit-2 blocks the tool call**. Order of registration within a matcher block is execution order. Current order (GH-13 additions shown in **bold**):
 
 **On `git commit`:**
 
@@ -368,7 +370,7 @@ Exit code 2 with a block message means the hook is working.
 ## Adding a New Hook
 
 1. Write the shell script in this directory, `chmod +x`.
-2. Register it in `.apexyard/settings.json` under the right event + matcher.
+2. Register it in `.claude/settings.json` under the right event + matcher.
 3. Smoke-test it with a realistic stdin payload (see above).
 4. Document it in this README under the right section.
 5. If it enforces a rule that was previously only in a rule file, update that rule file with a trailing "enforced by `.apexyard/hooks/<name>.sh`" note so readers can trace the prose back to the enforcement.
