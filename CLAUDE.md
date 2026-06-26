@@ -353,3 +353,14 @@ Set `phase=awaiting_approval` and `non_blocker=<description or null>` accordingl
 Never say "PR is ready" without the Rex verdict — wait for CI or fetch it first.
 
 *If you're unsure about a process, read the relevant workflow doc. If still unsure, ask the team lead.*
+
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
+- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
