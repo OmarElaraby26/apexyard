@@ -7,11 +7,6 @@
 name: Link Check
 
 on:
-  pull_request:
-    paths:
-      - "**/*.md"
-      - "site/**"
-      - ".github/workflows/link-check.yml"
   push:
     branches: [main]
     paths:
