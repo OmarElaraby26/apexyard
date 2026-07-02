@@ -162,7 +162,10 @@ TRACKER_KIND="gh"
 if [ -f "$HOOK_DIR/_lib-tracker.sh" ]; then
   # shellcheck disable=SC1090,SC1091
   . "$HOOK_DIR/_lib-tracker.sh"
-  TRACKER_KIND=$(tracker_kind)
+  # Resolve the kind for the OPERATION'S target repo so a per-project tracker
+  # override (apexyard.projects.yaml) wins over the global block (#670). Empty
+  # TRACKER_REPO → no-arg → global default (today's behaviour).
+  TRACKER_KIND=$(tracker_kind "$TRACKER_REPO")
 fi
 
 # `tracker.kind = none` disables existence verification — there's no CLI to
@@ -206,6 +209,7 @@ fi
 # "every PR needs its own OPEN ticket".
 MISSING=""
 CLOSED=""
+SHAPE_ONLY=""
 for REF in $REFS; do
   NUM=$(echo "$REF" | tr -d '#')
   # Dispatch via the tracker lib. For non-gh kinds `--repo` may be a no-op.
@@ -213,6 +217,16 @@ for REF in $REFS; do
   # Short-circuit: only consult upstream when the primary tracker missed.
   if [ -z "$ISSUE_JSON" ] && [ -n "$UPSTREAM_REPO" ]; then
     ISSUE_JSON=$(tracker_view "$NUM" "$UPSTREAM_REPO" 2>/dev/null)
+  fi
+  if [ -z "$ISSUE_JSON" ] && [ "$TRACKER_KIND" != "gh" ]; then
+    # Non-gh tracker (Linear / Jira / Asana / custom) returned nothing — the
+    # tracker CLI is absent, unauthenticated, or not queryable from this
+    # environment (#501). Do NOT block: the ref already passed the well-formed
+    # shape extraction above, which is all we can assert without a working CLI.
+    # Hard existence enforcement (adding to MISSING → exit 2) is retained ONLY
+    # for tracker.kind == gh.
+    SHAPE_ONLY="${SHAPE_ONLY}${REF} "
+    continue
   fi
   if [ -z "$ISSUE_JSON" ]; then
     MISSING="${MISSING}${REF} "
@@ -253,6 +267,10 @@ If the reference is truly informational (cross-repo link that can't be verified
 with \`gh issue view\`), write it as a plain URL instead of #N notation.
 MSG
   exit 2
+fi
+
+if [ -n "$SHAPE_ONLY" ]; then
+  echo "WARN: verify-commit-refs.sh: tracker '${TRACKER_KIND}' not queryable here — ${SHAPE_ONLY}accepted on shape only (no existence check). See #501." >&2
 fi
 
 if [ -n "$CLOSED" ]; then

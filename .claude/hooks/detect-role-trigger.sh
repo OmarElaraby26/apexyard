@@ -204,6 +204,32 @@ detect_path_triggers() {
         "edit touches docs/agdr/ (architecture decision)"
       ;;
   esac
+
+  # Solution Architect — design artifacts (technical design / migration AgDR /
+  # feature spec / PRD). Reviews the design before Build. Patterns mirror the
+  # require-architecture-review.sh DESIGN_GLOBS (kept narrow on purpose — the
+  # reviewer no-ops cheaply on a false positive). The migration-AgDR case
+  # below is intentionally additive to the Tech Lead docs/agdr/ trigger above:
+  # a migration AgDR fires BOTH (Hisham authors, Tariq reviews).
+  case "$rel" in
+    *technical-design*.md|*tech-design*.md|\
+    designs/*|*/designs/*|\
+    prds/*|*/prds/*|*prd*.md|\
+    *feature-spec*.md)
+      emit_banner \
+        "Solution Architect" \
+        "roles/architecture/solution-architect.md" \
+        "edit touches a design artifact (technical design / feature spec)"
+      ;;
+  esac
+  case "$rel" in
+    docs/agdr/*migration*.md|*/docs/agdr/*migration*.md)
+      emit_banner \
+        "Solution Architect" \
+        "roles/architecture/solution-architect.md" \
+        "edit touches a migration AgDR (design to review before Build)"
+      ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -268,6 +294,7 @@ penetration tester|roles/security/penetration-tester.md
 pen tester|roles/security/penetration-tester.md
 head of security|roles/security/head-of-security.md
 tech lead|roles/engineering/tech-lead.md
+solution architect|roles/architecture/solution-architect.md
 head of engineering|roles/engineering/head-of-engineering.md
 backend engineer|roles/engineering/backend-engineer.md
 frontend engineer|roles/engineering/frontend-engineer.md
@@ -338,12 +365,43 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
+# Contrarian prompted-activation detection (UserPromptSubmit).
+#
+# The Contrarian (Naqid) is a UTILITY agent (no roles/ file), invoked on the
+# "play devil's advocate" family of phrases rather than the "act as the X"
+# shape the role table uses — so it gets its own matcher + its own banner
+# (emit_banner reads a roles/ Class line that doesn't exist for utility
+# agents). Advisory + on-demand: this fires a suggestion to run /challenge or
+# spawn the contrarian agent; it never blocks. See AgDR-0078.
+#
+# Over-triggering is acceptable (the agent no-ops cheaply on a false positive),
+# consistent with the rest of this hook's philosophy.
+# ---------------------------------------------------------------------------
+detect_contrarian_triggers() {
+  local prompt="$1"
+  [ -z "$prompt" ] && return 0
+
+  local norm
+  norm=$(printf '%s' "$prompt" \
+    | tr '[:upper:]' '[:lower:]' \
+    | tr ',.;:!?()[]{}"'"'" ' ' \
+    | tr -s '[:space:]' ' ')
+
+  # Phrase family (normalised — apostrophes are already spaces, so
+  # "devil's advocate" → "devil s advocate", matched by `devil[ s]*advocate`).
+  if printf ' %s ' "$norm" | grep -qE 'devil[ s]*advocate|poke holes|steelman|the case against|challenge this|the contrarian|naqid'; then
+    printf 'ROLE TRIGGER: The Contrarian (Naqid) — prompted premise-level challenge per .claude/rules/role-triggers.md. Run /challenge <target>, OR spawn the agent via the Agent tool with subagent_type: contrarian, to steelman-then-challenge (advisory only — never blocks a gate). See .claude/agents/contrarian.md + .claude/skills/challenge/SKILL.md. Per AgDR-0078.\n' >&2
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch on hook event.
 # ---------------------------------------------------------------------------
 case "$HOOK_EVENT" in
   UserPromptSubmit)
     prompt=$(printf '%s' "$INPUT" | jq -r '.prompt // empty' 2>/dev/null)
     detect_prompt_triggers "$prompt"
+    detect_contrarian_triggers "$prompt"
     ;;
   PreToolUse|PostToolUse|"")
     # Hook event name was missing on some older harness versions — fall

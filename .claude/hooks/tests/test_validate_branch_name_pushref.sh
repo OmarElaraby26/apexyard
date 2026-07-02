@@ -1,10 +1,15 @@
 #!/bin/bash
-# Tests for validate-branch-name.sh's push-source-ref extraction (#194).
+# Tests for validate-branch-name.sh's push-source-ref extraction (#194, #547).
 #
 # Validates that the hook reads the branch from the actual `git push`
 # command's source ref when present, rather than from `git branch
 # --show-current` against the harness's $PWD. This is the worktree-safe
 # behaviour Agent fan-out workers depend on.
+#
+# Also validates the #547 bug fixes:
+#   - `HEAD:dst` refspec → validates DST, not HEAD (was: blocked on "HEAD")
+#   - `--tags 2>&1 | tail` → skipped as tag push (was: blocked on "2>")
+#   - shell redirections stripped before token parsing
 #
 # Each case:
 #   - builds an isolated sandbox with the hook + helper
@@ -22,6 +27,7 @@ SRC_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 HOOK_SRC="$SRC_ROOT/.claude/hooks/validate-branch-name.sh"
 LIB_SRC="$SRC_ROOT/.claude/hooks/_lib-extract-push-ref.sh"
 LIB_CONFIG_SRC="$SRC_ROOT/.claude/hooks/_lib-read-config.sh"
+LIB_PR_REPO_SRC="$SRC_ROOT/.claude/hooks/_lib-pr-repo.sh"
 
 for f in "$HOOK_SRC" "$LIB_SRC"; do
   if [ ! -f "$f" ]; then
@@ -57,6 +63,9 @@ make_sandbox_with_wrong_local_branch() {
   cp "$LIB_SRC"  "$sb/.claude/hooks/_lib-extract-push-ref.sh"
   if [ -f "$LIB_CONFIG_SRC" ]; then
     cp "$LIB_CONFIG_SRC" "$sb/.claude/hooks/_lib-read-config.sh"
+  fi
+  if [ -f "$LIB_PR_REPO_SRC" ]; then
+    cp "$LIB_PR_REPO_SRC" "$sb/.claude/hooks/_lib-pr-repo.sh"
   fi
   if [ -f "$SRC_ROOT/.claude/project-config.defaults.json" ]; then
     cp "$SRC_ROOT/.claude/project-config.defaults.json" "$sb/.claude/project-config.defaults.json"
@@ -141,6 +150,140 @@ run_case "git push --delete: falls back, blocks (local non-conforming)" \
 # Non-push commands → no-op.
 run_case "non-push command exits 0 silently" \
   "git status" 0
+
+# ---- #547 bug fixes -----------------------------------------------------
+#
+# (a) src:dst refspec — validate the DST (right of colon), not the src.
+#     Before fix: hook grabbed "HEAD" from the left side and blocked.
+run_case "#547: HEAD:valid-branch validates dst → passes" \
+  "git push upstream HEAD:feature/GH-547-push-ref-parsing" 0
+
+run_case "#547: HEAD:non-conforming-dst blocks on dst" \
+  "git push upstream HEAD:bogus-branch-name" 2
+
+run_case "#547: sha:dst validates dst → passes" \
+  "git push upstream abc1234:fix/GH-1-some-fix" 0
+
+run_case "#547: local-branch:remote-branch validates remote-dst → passes" \
+  "git push upstream fix/GH-100-local:feature/GH-200-remote" 0
+
+# (b) Tag pushes must be a no-op for a branch-name validator.
+#     Before fix: hook grabbed "2>" from the redirection and blocked.
+run_case "#547: --tags plain → skip (no branch to validate)" \
+  "git push upstream --tags" 0
+
+run_case "#547: --tags with 2>&1 pipe → skip (no branch to validate)" \
+  "git push upstream --tags 2>&1 | tail -5" 0
+
+run_case "#547: --tags before remote → skip" \
+  "git push --tags upstream" 0
+
+run_case "#547: tag <name> keyword form → skip" \
+  "git push upstream tag v1.2.3" 0
+
+run_case "#547: refs/tags/ refspec → skip" \
+  "git push upstream refs/tags/v1.0.0:refs/tags/v1.0.0" 0
+
+# (c) Shell redirections stripped — bare redirect token not mistaken for branch.
+#     Before fix: "2>" or ">" could end up as a positional token.
+run_case "#547: plain 2>&1 redirect on valid push → passes" \
+  "git push upstream feature/GH-547-foo 2>&1" 0
+
+run_case "#547: > redirect on valid push → passes" \
+  "git push upstream fix/GH-1-bar > /tmp/out.txt" 0
+
+# ---- Regression: original #194 cases still pass after #547 fix ----------
+
+run_case "regression: explicit ref passes (no refspec)" \
+  "git push origin feature/GH-194-worktree-cwd-hooks" 0
+
+run_case "regression: non-conforming explicit ref still blocks" \
+  "git push origin bogus-branch" 2
+
+# ---- #693: cd-target re-root for the no-ref fallback --------------------
+#
+# Scenario: from an ops-fork session whose cwd branch is non-conforming
+# (`dev` / a bogus host branch), the operator runs
+#   `cd <other-repo> && git push origin`
+# with NO explicit source ref. The hook fires BEFORE the shell `cd` runs,
+# so its cwd is still the host sandbox. Pre-#693 the fallback resolves the
+# branch via `git branch --show-current` in the host cwd (non-conforming →
+# false BLOCK, e.g. "Branch 'dev' missing ticket ID"). Post-#693 the hook
+# re-roots the fallback to the cd-target via pr_cmd_cd_target.
+#
+# These cases need a SECOND repo (the cd-target) checked out on a known
+# branch, while the host sandbox stays on the non-conforming branch.
+
+# Build a target repo checked out on the given branch. Echoes its path.
+make_target_repo_on_branch() {
+  local target_branch="$1" tdir
+  tdir=$(mktemp -d)
+  (
+    cd "$tdir" || exit 1
+    git init -q
+    git config user.email "test@example.com"
+    git config user.name "test"
+    : > onboarding.yaml
+    git add onboarding.yaml
+    git commit -q -m "init"
+    git checkout -q -B "$target_branch"
+  )
+  echo "$tdir"
+}
+
+# Like run_case, but the command `cd`s into a separate target repo that is
+# checked out on $target_branch. The host sandbox's local branch stays
+# non-conforming, so a correct re-root is the ONLY way these pass/fail as
+# expected.
+run_cd_case() {
+  local label="$1" target_branch="$2" want_rc="$3"
+  local sb tgt; sb=$(make_sandbox_with_wrong_local_branch)
+  tgt=$(make_target_repo_on_branch "$target_branch")
+  local cmd="cd $tgt && git push origin"
+  local input
+  input=$(jq -nc --arg c "$cmd" '{tool_input:{command:$c}}')
+  local got_rc got_stderr
+  got_stderr=$(cd "$sb" && echo "$input" | bash .claude/hooks/validate-branch-name.sh 2>&1 >/dev/null)
+  got_rc=$?
+  rm -rf "$sb" "$tgt"
+
+  if [ "$got_rc" != "$want_rc" ]; then
+    echo "FAIL [$label]: want rc=$want_rc, got $got_rc" >&2
+    echo "    cmd: $cmd" >&2
+    echo "    stderr: ${got_stderr:0:300}" >&2
+    FAIL=$((FAIL+1)); FAILED_CASES="${FAILED_CASES}${label} "
+    return
+  fi
+  echo "PASS [$label]"
+  PASS=$((PASS+1))
+}
+
+# (a) False-positive gone: cd-target is on a CONFORMING branch, host cwd is
+#     non-conforming, no source ref → PASS (pre-#693 this BLOCKED on the
+#     host's bogus branch).
+run_cd_case "#693: cd-target on conforming branch, no ref → PASS (false-positive gone)" \
+  "feature/GH-693-cd-target" 0
+
+# (b) cd-target on the framework trunk `dev` → exempt → PASS. (Proves the
+#     re-root reads the TARGET's branch: host is bogus, target is dev.)
+run_cd_case "#693: cd-target on dev (trunk), no ref → PASS via trunk exemption" \
+  "dev" 0
+
+# (c) Still fires: cd-target itself is on a genuinely non-conforming branch →
+#     BLOCK. Proves the re-root targets the right tree, not a blanket no-op.
+run_cd_case "#693: cd-target on non-conforming branch, no ref → still BLOCKS (true-negative)" \
+  "bogus-no-ticket-branch" 2
+
+# (d) No-`cd` path unchanged: explicit conforming ref still passes; explicit
+#     non-conforming ref still blocks; no-ref falls back to host HEAD (bogus)
+#     and blocks. (These mirror the existing cases above but are re-asserted
+#     here to lock the byte-for-byte no-`cd` equivalence the #693 fix promises.)
+run_case "#693: no-cd explicit conforming ref still passes" \
+  "git push origin feature/GH-693-no-cd" 0
+run_case "#693: no-cd explicit non-conforming ref still blocks" \
+  "git push origin bogus-branch" 2
+run_case "#693: no-cd no-ref falls back to host HEAD (bogus) → blocks" \
+  "git push origin" 2
 
 # ---- Summary ------------------------------------------------------------
 

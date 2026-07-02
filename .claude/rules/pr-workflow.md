@@ -37,17 +37,11 @@ Also check before pushing:
 ## Before `gh pr create`
 
 ```
-[ ] Ticket exists?                    NO → create the ticket FIRST
-[ ] Ticket has AC?                    NO → add acceptance criteria
-[ ] Branch has ticket ID?             NO → rename branch
-[ ] PR title has ticket ID?           NO → fix format (single ticket per title)
-[ ] Body uses `Refs #N` (not Closes)? NO → switch (route through QA), OR apply
-                                            exempt label to the issue first
-                                            (qa-bypass — deliberate per-ticket
-                                             escape valve, narrow on purpose)
+[ ] Ticket exists?            NO → create the ticket FIRST
+[ ] Ticket has AC?            NO → add acceptance criteria
+[ ] Branch has ticket ID?     NO → rename branch
+[ ] PR title has ticket ID?   NO → fix format (single ticket per title)
 ```
-
-`Closes #N` (and synonyms `Fixes` / `Resolves`) is blocked at PR-create time by `block-closes-without-exempt-label.sh` when the linked issue lacks an exempt label. See `.claude/rules/git-conventions.md` § "Issue references — `Refs` vs `Closes`".
 
 ## After `gh pr create`
 
@@ -99,6 +93,34 @@ The discrete moment is the **invocation of `/approve-merge`**, not a separate "n
 
 This rule also applies to other destructive / externally-visible / hard-to-reverse actions: force pushes, branch deletes, closing issues with dependents, posting to external channels. Plan-level "go" does not carry through to any of these. List them in the plan if you want — just stop before executing and ask.
 
+## Build agents cannot self-review
+
+A build-class sub-agent (backend-engineer, frontend-engineer, platform-engineer, product-manager, data-engineer, ui-designer, ux-designer) is spawned to implement a ticket. It cannot nest the Agent tool, which means it cannot spawn the real `code-reviewer` (Rex). Any "review" a build agent produces is the author reviewing their own work — not an independent pass.
+
+**This matters for the merge gate.** The two-reviews requirement (workflow-gates rule #5) depends on Rex being a separate agent with a separate context. A build agent impersonating Rex — framing its final report as "Rex Code Review — Verdict: APPROVED" and fabricating a `*-rex.approved` marker — satisfies the *filename* of the gate requirement without satisfying its *intent*. It is a visible rule violation, not an edge case.
+
+### Rule
+
+Build agents MUST NOT:
+
+- Write any file under `.claude/session/reviews/`, including `*-rex.approved` or `*-ceo.approved`
+- Frame their final report as a code review, Rex review, or include a "Verdict: APPROVED / CHANGES REQUESTED" section
+- Claim to be performing an independent review
+
+Build agents MUST:
+
+- Report build results plainly: what was built, what tests ran, what passed or failed
+- Hand off to the orchestrator, which runs the real Rex review as a separate sub-agent call
+
+### Mechanical backstop
+
+This rule is currently enforced by two layers in addition to the prompt guardrail in each build-agent file:
+
+1. `warn-review-marker-write.sh` — PreToolUse advisory (exit 0, never blocks) that fires when a Write or Bash call targets `*-rex.approved` or `*-ceo.approved` under `.claude/session/reviews/`, reminding that markers must come from the real reviewer or `/approve-merge`.
+2. The prompt-convention guardrail in each build-agent file — the primary human-in-the-loop safety net is the per-PR CEO nod required by `/approve-merge`; the orchestrator running a real, separate Rex review is the second. These are the current enforcement layers.
+
+A stronger mechanical gate — requiring a real posted GitHub review at the PR HEAD before the merge gate passes — is analysed in AgDR-0062 and deferred as an explicit **opt-in for future hands-off / multi-account setups**. In a single-maintainer / single-GitHub-account setup (the default), Rex posts reviews from the same account that opened the PR, so an author-independence check can never be satisfied and would block every merge. The gate will be re-enabled behind a config flag if/when merging becomes unattended or a separate reviewer identity (bot account) exists.
+
 ### Mechanical enforcement
 
 The `block-unreviewed-merge.sh` hook enforces this rule at the shell level. It requires **two** approval markers in `.claude/session/reviews/` before letting any merge command through:
@@ -122,6 +144,8 @@ Both markers' SHAs must match the PR's HEAD as reported by GitHub (`gh pr view <
 
 **Note on "HEAD":** the merge gates compare marker SHAs against the PR's real HEAD on GitHub, not the local working tree's HEAD. Earlier versions of the hooks used `git rev-parse HEAD`, which forced a `gh pr checkout <N>` dance before every `gh pr merge <N>` (local was rarely the PR branch, and any mismatch blocked the merge). After #55, the hooks resolve the PR HEAD via `gh pr view` and fall back to local HEAD with a visible warning only when the gh call fails (network / auth).
 
+**Note on the load-bearing signal — local marker, not a GitHub "Approved" state (#587):** the merge gate reads the **local `*-rex.approved` marker file**, never GitHub's review-state UI. So the canonical code-reviewer flow is: post the human-readable review with `gh pr review <N> --comment` (verdict stated in the body) AND write the local marker on an APPROVED verdict. The local marker is the required gate output; the GitHub comment is for human visibility. A GitHub "Approved" review state is **optional** and, in the default single-maintainer / single-GitHub-account or auto-mode setup, **unavailable** — GitHub refuses to let an account approve its own PR, and an auto-mode write-classifier may additionally flag a `gh pr review --approve` attempt. That refusal is **expected, not a gate failure**: the sanctioned `code-reviewer` (Rex) sub-agent is a distinct review pass from the author, so writing its own marker satisfies the author-vs-reviewer separation the gate depends on regardless of the GitHub UI. Do not attempt `--approve` by default, and do not treat its block as a failure to review. (This applies ONLY to the sanctioned `code-reviewer` agent — a *build* agent writing a `*-rex.approved` marker is still the author-impersonating-reviewer violation described above.)
+
 Claude can technically `rm` or `touch` these files by hand, or fabricate the structured fields. Doing so is a visible, auditable, grep-able rule violation — and the whole point of recording the rule mechanically is so that the failure mode is "Claude ignored a hook" (visible) instead of "Claude inferred approval from something vague" (invisible). The structured-marker format raises the visibility bar one more notch by requiring the model to type `approved_by=user` etc. on purpose.
 
 ### Both merge shapes are gated (#47)
@@ -136,28 +160,6 @@ All three merge-gate hooks (`block-unreviewed-merge.sh`, `block-merge-on-red-ci.
 Historically only the first shape was matched. In April 2026 (incident: `me2resh/curios-dog#190` was merged via `gh api` while CI was still running), the second shape was discovered as a silent bypass and closed in [#47](https://github.com/me2resh/apexyard/issues/47). Both the matcher entries in `.claude/settings.json` and the PR-number extraction in each hook (`.claude/hooks/_lib-extract-pr.sh`) now recognise both shapes. Invoking either triggers the gate — there is no supported merge path that skips the two-reviews rule.
 
 Using `gh api .../merge` as a workaround for other issues (e.g. cross-repo resolution, hook flakiness) is itself a rule violation on par with forging an approval marker. If a gate is mis-firing, fix the gate.
-
-## After Merge — QA Gate (HARD STOP)
-
-A merged PR does NOT auto-close the linked issue (you used `Refs #N`, not `Closes`). After merge, the chain is:
-
-```
-1. golden-paths/pipelines/move-to-qa-on-merge.yml fires (server-side):
-   parses PR body for `Refs #N` → applies `qa` label to each linked issue.
-2. Next session that runs gh against the labeled issue:
-   detect-role-trigger.sh emits the activation banner for Salim
-   (QA Engineer, roles/engineering/qa-engineer.md).
-3. Salim verifies every AC + edge cases + regression check.
-4. On pass:  gh issue edit <N> --add-label qa-passed && gh issue close <N>
-   On fail:  file [Bug] via /bug, leave original ticket in `qa` state.
-```
-
-The close is gated by:
-
-- Client-side: `block-issue-close-without-qa-passed.sh` rejects `gh issue close` / `--state closed` / `gh api ... state=closed` if `qa-passed` and exempt labels are both absent.
-- Server-side: `golden-paths/pipelines/qa-gate.yml` reopens any issue closed without `qa-passed` (or exempt label) — catches web UI / direct-API closes.
-
-See `.claude/rules/workflow-gates.md` § "QA State is Mandatory" for the table mapping each transition to the hook/workflow enforcing it.
 
 ## After Pushing Commits to an Open PR
 
