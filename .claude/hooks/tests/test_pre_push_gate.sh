@@ -169,7 +169,78 @@ case7() {
   rm -rf "$sb"
 }
 
-case1; case2; case3; case4; case5; case6; case7
+# -------------------- CASE 8: cd to non-Python dir → unaffected --------------------
+case8() {
+  local sb; sb=$(make_sandbox)
+  local target; target=$(mktemp -d)  # no pyproject.toml
+  local cmd_json="{\"tool_input\":{\"command\":\"cd ${target} && git push origin HEAD\"}}"
+  run_hook "$sb" "$cmd_json" 0 "" "non-python-target-unaffected"
+  rm -rf "$sb" "$target"
+}
+
+# -------------------- CASE 9: cd to Python dir, uv absent → INFO + pass --------------------
+case9() {
+  local sb; sb=$(make_sandbox)
+  local target; target=$(mktemp -d)
+  touch "$target/pyproject.toml"
+  local cmd_json="{\"tool_input\":{\"command\":\"cd ${target} && git push origin HEAD\"}}"
+  # Restrict PATH to exclude typical uv install locations (~/.local/bin, ~/.cargo/bin).
+  local path_save="$PATH"
+  export PATH="/usr/local/bin:/usr/bin:/bin"
+  if command -v uv >/dev/null 2>&1; then
+    echo "SKIP [python-no-uv-skip]: uv found in restricted PATH — skipped"
+    PASS=$((PASS+1))
+  else
+    run_hook "$sb" "$cmd_json" 0 "uv not found" "python-no-uv-skip"
+  fi
+  export PATH="$path_save"
+  rm -rf "$sb" "$target"
+}
+
+# -------------------- CASE 10: ruff format --check fails → BLOCKED --------------------
+case10() {
+  local sb; sb=$(make_sandbox)
+  local target; target=$(mktemp -d)
+  touch "$target/pyproject.toml"
+  local fake_bin; fake_bin=$(mktemp -d)
+  cat > "$fake_bin/uv" << 'UVEOF'
+#!/bin/sh
+# Fake uv: fail on ruff format --check, pass on everything else.
+if echo "$*" | grep -q "format" && echo "$*" | grep -q -- "--check"; then
+  echo "Would reformat: bad_file.py" >&2
+  exit 1
+fi
+exit 0
+UVEOF
+  chmod +x "$fake_bin/uv"
+  local cmd_json="{\"tool_input\":{\"command\":\"cd ${target} && git push origin HEAD\"}}"
+  local path_save="$PATH"
+  export PATH="$fake_bin:$PATH"
+  run_hook "$sb" "$cmd_json" 2 "BLOCKED.*ruff format" "python-ruff-format-fail-blocks"
+  export PATH="$path_save"
+  rm -rf "$sb" "$target" "$fake_bin"
+}
+
+# -------------------- CASE 11: ruff format + check both pass → pass --------------------
+case11() {
+  local sb; sb=$(make_sandbox)
+  local target; target=$(mktemp -d)
+  touch "$target/pyproject.toml"
+  local fake_bin; fake_bin=$(mktemp -d)
+  cat > "$fake_bin/uv" << 'UVEOF'
+#!/bin/sh
+exit 0
+UVEOF
+  chmod +x "$fake_bin/uv"
+  local cmd_json="{\"tool_input\":{\"command\":\"cd ${target} && git push origin HEAD\"}}"
+  local path_save="$PATH"
+  export PATH="$fake_bin:$PATH"
+  run_hook "$sb" "$cmd_json" 0 "" "python-ruff-all-pass"
+  export PATH="$path_save"
+  rm -rf "$sb" "$target" "$fake_bin"
+}
+
+case1; case2; case3; case4; case5; case6; case7; case8; case9; case10; case11
 
 echo ""
 echo "==================================="
