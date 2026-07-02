@@ -169,7 +169,152 @@ case7() {
   rm -rf "$sb"
 }
 
-case1; case2; case3; case4; case5; case6; case7
+
+# -------------------- CASE 8: untracked bad markdown → no failure --------------------
+# Regression guard for #548: a markdownlint command driven by git ls-files must
+# NOT lint untracked files, so a lint-dirty untracked .md must not block the push.
+# The command string avoids \0 / null-delimiter JSON escapes (jq rejects \0);
+# filenames in sandboxes are space-free so plain xargs (newline-split) is safe here.
+case8() {
+  local sb; sb=$(make_sandbox)
+  # Configure markdownlint using git ls-files (the fixed command shape).
+  # shellcheck disable=SC2016
+  printf '%s\n' \
+    '{"pre_push": {"commands": [{"name": "markdownlint", "run": "command -v npx >/dev/null 2>&1 || { echo INFO; exit 0; }; md_files=$(git ls-files '"'"'*.md'"'"' 2>/dev/null); [ -z \"$md_files\" ] && { echo INFO_SKIP; exit 0; }; echo \"$md_files\" | xargs npx --yes markdownlint-cli2 2>&1"}]}}' \
+    > "$sb/.claude/project-config.json"
+  # Drop a lint-dirty untracked markdown file.
+  # Critically, this file is NOT `git add`-ed, so git ls-files will not see it.
+  mkdir -p "$sb/.claude/skills/external-skill"
+  printf '# Bad heading  \n- item without blank line\n' \
+    > "$sb/.claude/skills/external-skill/DOCS.md"
+  # Push must succeed: the untracked file must be invisible to markdownlint.
+  run_hook "$sb" "$(push_json)" 0 "" "untracked-bad-md-ignored"
+  rm -rf "$sb"
+}
+
+# -------------------- CASE 9: tracked bad markdown → failure --------------------
+# Regression guard for #548: a lint error in a TRACKED markdown file must still
+# block the push, so the fix does not weaken the gate for real content.
+# Same command shape as case8 (space-safe xargs without -0, valid JSON).
+case9() {
+  local sb; sb=$(make_sandbox)
+  # shellcheck disable=SC2016
+  printf '%s\n' \
+    '{"pre_push": {"commands": [{"name": "markdownlint", "run": "command -v npx >/dev/null 2>&1 || { echo INFO; exit 0; }; md_files=$(git ls-files '"'"'*.md'"'"' 2>/dev/null); [ -z \"$md_files\" ] && { echo INFO_SKIP; exit 0; }; echo \"$md_files\" | xargs npx --yes markdownlint-cli2 2>&1"}]}}' \
+    > "$sb/.claude/project-config.json"
+  # Create a lint-dirty markdown file and COMMIT it so git ls-files sees it.
+  # MD047 (files-end-with-single-newline) is reliably detectable without a
+  # markdownlint config: just omit the trailing newline.
+  printf '# README\nno-trailing-newline' > "$sb/README.md"
+  (cd "$sb" && git add README.md && git commit -q -m "chore: add bad README")
+  # npx must be available for this case to be meaningful; skip gracefully if not.
+  if ! command -v npx >/dev/null 2>&1; then
+    echo "SKIP [tracked-bad-md-fails]: npx not available, case not executable"
+    return
+  fi
+  run_hook "$sb" "$(push_json)" 2 "markdownlint: FAILED" "tracked-bad-md-fails"
+  rm -rf "$sb"
+}
+
+# -------------------- CASE 10: cd to non-Python dir → unaffected --------------------
+case10() {
+  local sb; sb=$(make_sandbox)
+  local target; target=$(mktemp -d)  # no pyproject.toml
+  local cmd_json="{\"tool_input\":{\"command\":\"cd ${target} && git push origin HEAD\"}}"
+  run_hook "$sb" "$cmd_json" 0 "" "non-python-target-unaffected"
+  rm -rf "$sb" "$target"
+}
+
+# -------------------- CASE 11: cd to Python dir, uv absent → INFO + pass --------------------
+case11() {
+  local sb; sb=$(make_sandbox)
+  local target; target=$(mktemp -d)
+  touch "$target/pyproject.toml"
+  local cmd_json="{\"tool_input\":{\"command\":\"cd ${target} && git push origin HEAD\"}}"
+  # Restrict PATH to exclude typical uv install locations (~/.local/bin, ~/.cargo/bin).
+  local path_save="$PATH"
+  export PATH="/usr/local/bin:/usr/bin:/bin"
+  if command -v uv >/dev/null 2>&1; then
+    echo "SKIP [python-no-uv-skip]: uv found in restricted PATH — skipped"
+    PASS=$((PASS+1))
+  else
+    run_hook "$sb" "$cmd_json" 0 "uv not found" "python-no-uv-skip"
+  fi
+  export PATH="$path_save"
+  rm -rf "$sb" "$target"
+}
+
+# -------------------- CASE 12: ruff format --check fails → BLOCKED --------------------
+case12() {
+  local sb; sb=$(make_sandbox)
+  local target; target=$(mktemp -d)
+  touch "$target/pyproject.toml"
+  local fake_bin; fake_bin=$(mktemp -d)
+  cat > "$fake_bin/uv" << 'UVEOF'
+#!/bin/sh
+# Fake uv: fail on ruff format --check, pass on everything else.
+if echo "$*" | grep -q "format" && echo "$*" | grep -q -- "--check"; then
+  echo "Would reformat: bad_file.py" >&2
+  exit 1
+fi
+exit 0
+UVEOF
+  chmod +x "$fake_bin/uv"
+  local cmd_json="{\"tool_input\":{\"command\":\"cd ${target} && git push origin HEAD\"}}"
+  local path_save="$PATH"
+  export PATH="$fake_bin:$PATH"
+  run_hook "$sb" "$cmd_json" 2 "BLOCKED.*ruff format" "python-ruff-format-fail-blocks"
+  export PATH="$path_save"
+  rm -rf "$sb" "$target" "$fake_bin"
+}
+
+# -------------------- CASE 14: ruff lint (check) fails → BLOCKED --------------------
+case14() {
+  local sb; sb=$(make_sandbox)
+  local target; target=$(mktemp -d)
+  touch "$target/pyproject.toml"
+  local fake_bin; fake_bin=$(mktemp -d)
+  cat > "$fake_bin/uv" << 'UVEOF'
+#!/bin/sh
+# Fake uv: format check passes, ruff check (lint) fails.
+if echo "$*" | grep -q "format" && echo "$*" | grep -q -- "--check"; then
+  exit 0
+fi
+if echo "$*" | grep -q "check"; then
+  echo "E501 line too long (99 > 88)" >&2
+  exit 1
+fi
+exit 0
+UVEOF
+  chmod +x "$fake_bin/uv"
+  local cmd_json="{\"tool_input\":{\"command\":\"cd ${target} && git push origin HEAD\"}}"
+  local path_save="$PATH"
+  export PATH="$fake_bin:$PATH"
+  run_hook "$sb" "$cmd_json" 2 "BLOCKED.*ruff lint" "python-ruff-lint-fail-blocks"
+  export PATH="$path_save"
+  rm -rf "$sb" "$target" "$fake_bin"
+}
+
+# -------------------- CASE 13: ruff format + check both pass → pass --------------------
+case13() {
+  local sb; sb=$(make_sandbox)
+  local target; target=$(mktemp -d)
+  touch "$target/pyproject.toml"
+  local fake_bin; fake_bin=$(mktemp -d)
+  cat > "$fake_bin/uv" << 'UVEOF'
+#!/bin/sh
+exit 0
+UVEOF
+  chmod +x "$fake_bin/uv"
+  local cmd_json="{\"tool_input\":{\"command\":\"cd ${target} && git push origin HEAD\"}}"
+  local path_save="$PATH"
+  export PATH="$fake_bin:$PATH"
+  run_hook "$sb" "$cmd_json" 0 "" "python-ruff-all-pass"
+  export PATH="$path_save"
+  rm -rf "$sb" "$target" "$fake_bin"
+}
+
+case1; case2; case3; case4; case5; case6; case7; case8; case9; case10; case11; case12; case13; case14
 
 echo ""
 echo "==================================="

@@ -57,6 +57,38 @@ if echo "$HEAD_MSG" | grep -qF -- "$SKIP_MARKER"; then
 fi
 
 # ---------------------------------------------------------------------------
+# Python-project detection: if the push command cd's into a repo with
+# pyproject.toml, enforce ruff format + ruff check before the push.
+# This closes the gap where REPO_ROOT resolves to the ops fork even when
+# pushing a managed Python project (e.g. `cd workspace/foo && git push`).
+# ---------------------------------------------------------------------------
+
+PUSH_TARGET_DIR=$(echo "$COMMAND" | grep -oE "\bcd[[:space:]]+[^;&|]+" | head -1 | sed 's/^cd[[:space:]]*//' | tr -d "'\"" | sed 's/[[:space:]]*$//')
+if [ -n "$PUSH_TARGET_DIR" ] && [ -d "$PUSH_TARGET_DIR" ] && [ -f "$PUSH_TARGET_DIR/pyproject.toml" ]; then
+  PROJ_NAME=$(basename "$PUSH_TARGET_DIR")
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "INFO: uv not found — ruff checks skipped for ${PROJ_NAME}." >&2
+  else
+    echo "pre-push-gate: ruff format --check (${PROJ_NAME}) ..."
+    if ! (cd "$PUSH_TARGET_DIR" && uv run ruff format --check . 2>&1); then
+      cat >&2 <<ERR
+BLOCKED: ruff format violation in ${PROJ_NAME}.
+Fix: cd ${PUSH_TARGET_DIR} && uv run ruff format .
+ERR
+      exit 2
+    fi
+    echo "pre-push-gate: ruff check (${PROJ_NAME}) ..."
+    if ! (cd "$PUSH_TARGET_DIR" && uv run ruff check . 2>&1); then
+      cat >&2 <<ERR
+BLOCKED: ruff lint violation in ${PROJ_NAME}.
+Fix: cd ${PUSH_TARGET_DIR} && uv run ruff check --fix .
+ERR
+      exit 2
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Load command list from project config via the shared reader.
 # Shipped defaults ship at .claude/project-config.defaults.json.
 # See docs/project-config.md and apexyard#109.
