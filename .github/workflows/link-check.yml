@@ -44,6 +44,7 @@ jobs:
             --exclude-private
             --exclude 'github\.com/OmarElaraby26/xadvisor'
             --accept 200,204,206,301,302,429
+            --max-concurrency 16
             --base https://yard.apexscript.com/
             'site/index.html'
             '**/*.md'
