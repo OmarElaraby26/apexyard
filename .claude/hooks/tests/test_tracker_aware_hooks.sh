@@ -17,6 +17,14 @@
 
 set -u
 
+# Pin isolation: per-project tracker resolution (#670) reads the ops-root
+# session pin to find the registry. Run interactively inside a live apexyard
+# session, the pin resolves PAST each mktemp sandbox to the operator's real
+# fork, so the sandboxed hooks gate against the wrong repo. The authoritative
+# runner (bin/run-hook-tests.sh) already disables the pin; unset here too so a
+# direct `bash test_tracker_aware_hooks.sh` is robust under nested invocation.
+unset APEXYARD_OPS_PIN_DIR CLAUDE_CODE_SESSION_ID 2>/dev/null || true
+
 HOOK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TRACKER_LIB="$HOOK_DIR/_lib-tracker.sh"
 CONFIG_LIB="$HOOK_DIR/_lib-read-config.sh"
@@ -67,11 +75,13 @@ YAML
     chmod +x .claude/hooks/*.sh
     cp "$DEFAULTS" .claude/project-config.defaults.json
 
-    # Other libs the consumer hooks transitively source. validate-branch-name.sh
-    # tries to source _lib-extract-push-ref.sh; copy it if present.
-    if [ -f "$HOOK_DIR/_lib-extract-push-ref.sh" ]; then
-      cp "$HOOK_DIR/_lib-extract-push-ref.sh" .claude/hooks/_lib-extract-push-ref.sh
-    fi
+    # Other libs the consumer hooks transitively source:
+    #   _lib-extract-push-ref.sh   — validate-branch-name.sh
+    #   _lib-portfolio-paths.sh    — _lib-tracker.sh per-project resolution (#670)
+    #   _lib-ops-root.sh           — sourced by portfolio-paths / read-config
+    for extra in _lib-extract-push-ref.sh _lib-portfolio-paths.sh _lib-ops-root.sh; do
+      [ -f "$HOOK_DIR/$extra" ] && cp "$HOOK_DIR/$extra" ".claude/hooks/$extra"
+    done
 
     git add -A
     git commit -q -m "test fixture"
@@ -273,9 +283,16 @@ else
   record_fail "linear: closed-state (Done) → blocked"
 fi
 
-# Linear: missing ticket (linear exits 1) — should block.
+# Linear: tracker CLI returns empty (linear exits 1). Under #501 this is
+# treated as "not queryable here" — indistinguishable from an absent /
+# unauthenticated CLI — so the hook falls back to shape-only and PASSES
+# (exit 0) rather than blocking. Prior to #501 this blocked (exit 2); the
+# behaviour was reversed because blocking made it impossible to open a PR
+# referencing a real, valid non-GitHub ticket when the CLI isn't reachable.
+# (Closed-state Linear tickets still block — see the "Done" case above — and
+# gh fabricated #N still blocks — see Case 12.)
 install_mock "$SB" linear 'exit 1'
-cmd='gh pr create --title "feat(LIN-99): missing" --body "
+cmd='gh pr create --title "feat(LIN-99): unqueryable" --body "
 ## Testing
 x
 
@@ -284,10 +301,10 @@ x
 |------|------------|
 | LIN | Linear |
 " --head feature/LIN-99-test'
-if run_pr_hook "$SB" "$cmd" 2; then
-  record_pass "linear: missing ticket → blocked"
+if run_pr_hook "$SB" "$cmd" 0; then
+  record_pass "linear: tracker CLI returns empty → shape-only PASS (#501; was block pre-#501)"
 else
-  record_fail "linear: missing ticket → blocked"
+  record_fail "linear: tracker CLI returns empty → shape-only PASS (#501; was block pre-#501)"
 fi
 rm -rf "$SB"
 
@@ -603,6 +620,163 @@ else
   record_fail "lib: tracker_view (none) exits non-zero (existence-check disabled)" "got rc=$rc"
 fi
 rm -rf "$SB"
+
+# =============================================================================
+# Case 10 (#501): non-gh tracker, CLI absent / returns empty → shape-only
+# fallback. The existence check can't run (no working CLI), so a well-formed
+# key in a valid PR title must PASS (not block) — blocking would make it
+# impossible to open a PR referencing a real non-GitHub ticket.
+# =============================================================================
+SB=$(make_fork)
+cat > "$SB/.claude/project-config.json" <<'JSON'
+{
+  "tracker": {
+    "kind": "linear",
+    "view_command": "linear issue view {id} --json",
+    "id_pattern": "^[A-Z]+-[0-9]+$"
+  }
+}
+JSON
+# Mock linear CLI that always fails (CLI absent / unauthenticated / not
+# queryable from this environment) — tracker_view returns empty.
+install_mock "$SB" linear 'exit 1'
+cmd='gh pr create --title "feat(LIN-77): real linear ticket" --body "
+## Testing
+x
+
+## Glossary
+| Term | Definition |
+|------|------------|
+| LIN | Linear |
+" --head feature/LIN-77-test'
+if run_pr_hook "$SB" "$cmd" 0; then
+  record_pass "#501 pr-create: non-gh tracker not queryable → shape-only PASS (no block)"
+else
+  record_fail "#501 pr-create: non-gh tracker not queryable → shape-only PASS (no block)"
+fi
+
+# Same mode — verify-commit-refs.sh must also fall back to shape-only and PASS
+# on a #N ref it cannot verify against the (absent) non-gh tracker.
+cmd='git commit -m "feat: wire LIN-77
+
+Closes #77
+"'
+if run_commit_hook "$SB" "$cmd" 0; then
+  record_pass "#501 commit-refs: non-gh tracker not queryable → shape-only PASS (no block)"
+else
+  record_fail "#501 commit-refs: non-gh tracker not queryable → shape-only PASS (no block)"
+fi
+rm -rf "$SB"
+
+# =============================================================================
+# Case 11 (#501): an ill-formed PR title still fails the shape check even
+# under a non-gh tracker. Shape-only fallback must NOT become a blanket pass —
+# the title regex (type(TICKET): …) still gates malformed titles.
+# =============================================================================
+SB=$(make_fork)
+cat > "$SB/.claude/project-config.json" <<'JSON'
+{
+  "tracker": {
+    "kind": "linear",
+    "view_command": "linear issue view {id} --json",
+    "id_pattern": "^[A-Z]+-[0-9]+$"
+  }
+}
+JSON
+install_mock "$SB" linear 'exit 1'
+# Malformed title: no ticket ref in the type(TICKET): shape → must block (exit 2).
+cmd='gh pr create --title "feat: missing ticket parens" --body "
+## Testing
+x
+
+## Glossary
+| Term | Definition |
+|------|------------|
+| x | x |
+" --head feature/LIN-1-test'
+if run_pr_hook "$SB" "$cmd" 2; then
+  record_pass "#501 pr-create: ill-formed title still fails shape check under non-gh tracker"
+else
+  record_fail "#501 pr-create: ill-formed title still fails shape check under non-gh tracker"
+fi
+rm -rf "$SB"
+
+# =============================================================================
+# Case 12 (#501): gh behaviour is UNCHANGED — a fabricated #N under the default
+# gh tracker still BLOCKS (exit 2). The shape-only fallback is strictly non-gh;
+# the GitHub-issue existence check must remain hard for tracker.kind == gh.
+# =============================================================================
+SB=$(make_fork)
+# Default config (no project-config.json) → tracker.kind = gh. Mock gh returns
+# nothing (issue doesn't exist).
+install_mock "$SB" gh '
+if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+  exit 1
+fi
+exit 0
+'
+cmd='gh pr create --title "feat(#88888): missing gh ticket" --body "
+## Testing
+x
+
+## Glossary
+| Term | Definition |
+|------|------------|
+| x | x |
+" --head feature/GH-1-test'
+if run_pr_hook "$SB" "$cmd" 2; then
+  record_pass "#501 pr-create: gh tracker fabricated #N still BLOCKS (gh behaviour unchanged)"
+else
+  record_fail "#501 pr-create: gh tracker fabricated #N still BLOCKS (gh behaviour unchanged)"
+fi
+
+# verify-commit-refs.sh under gh: fabricated #N still blocks.
+cmd='git commit -m "feat: thing
+
+Closes #88888
+"'
+if run_commit_hook "$SB" "$cmd" 2; then
+  record_pass "#501 commit-refs: gh tracker fabricated #N still BLOCKS (gh behaviour unchanged)"
+else
+  record_fail "#501 commit-refs: gh tracker fabricated #N still BLOCKS (gh behaviour unchanged)"
+fi
+rm -rf "$SB"
+
+# =============================================================================
+# Case (#670): per-project tracker override drives the consumer's TRACKER_KIND.
+# The global tracker is gh; the registry gives THIS fork's repo a per-project
+# kind=none. verify-commit-refs.sh must resolve the PER-PROJECT kind (none →
+# short-circuit, exit 0), NOT the global gh — which would treat the fabricated-
+# looking #N as a missing ticket and BLOCK (exit 2). This proves the consumer's
+# TRACKER_KIND is threaded with the target repo, not the global no-arg value.
+# Guarded on a YAML parser (per-project resolution needs yq or python3+PyYAML).
+# =============================================================================
+if command -v yq >/dev/null 2>&1 || python3 -c 'import yaml' >/dev/null 2>&1; then
+  SB=$(make_fork)
+  # make_fork's origin is test-org/test-repo; give exactly that repo a
+  # per-project kind=none override while the global default stays gh.
+  cat > "$SB/apexyard.projects.yaml" <<'YAML'
+version: 1
+projects:
+  - name: example
+    repo: test-org/test-repo
+    tracker:
+      kind: none
+YAML
+  install_mock "$SB" gh 'exit 99'   # any gh call here would be a bug
+  cmd='git commit -m "feat: add thing
+
+Closes #99999
+"'
+  if run_commit_hook "$SB" "$cmd" 0; then
+    record_pass "#670 commit-refs: per-project kind=none short-circuits (global is gh)"
+  else
+    record_fail "#670 commit-refs: per-project kind=none short-circuits (global is gh)"
+  fi
+  rm -rf "$SB"
+else
+  echo "SKIP: #670 per-project consumer case (no yq / python3+PyYAML)"
+fi
 
 # =============================================================================
 # Summary

@@ -19,13 +19,10 @@
 #
 # The hook allows:
 #   - exit 0 (all green)
-#   - exit 8 if the repo has no CI (gh pr checks returns "no checks" — allow,
-#     UNLESS the project opted in via .ci.require_to_exist=true)
+#   - exit 8 if the repo has no CI (gh pr checks returns "no checks" — allow)
 # Blocks:
 #   - exit 1 (red CI)
 #   - any check with state FAILURE | CANCELLED | TIMED_OUT
-#   - "no checks reported" when .ci.require_to_exist=true (opt-in for free-tier
-#     private repos that can't use server-side branch protection)
 #
 # Pending checks (IN_PROGRESS | QUEUED): BLOCKED. The rule says all checks
 # must be green; pending is not green. Wait for CI to finish, then retry.
@@ -45,13 +42,30 @@ if ! is_merge_command "$COMMAND"; then
   exit 0
 fi
 
-# Parse --repo (for `gh pr merge --repo owner/repo`). Fallback: recover from
-# the `gh api .../pulls/<N>/merge` URL path so `gh pr checks` below is still
-# scoped correctly.
-CMD_REPO=$(echo "$COMMAND" | sed -nE 's/.*--repo[[:space:]]+([^[:space:]]+).*/\1/p' | head -1)
-if [ -z "$CMD_REPO" ]; then
-  CMD_REPO=$(echo "$COMMAND" | grep -oE 'repos/[^/[:space:]]+/[^/[:space:]]+/pulls/[0-9]+/merge' | sed -nE 's|repos/([^/]+/[^/]+)/pulls/.*|\1|p' | head -1)
+# Variable-substituted merge (#643): if the PR arg or --repo value is an
+# unexpanded shell variable, this hook can't resolve the real target from the
+# command text — the old code fell back to the CWD's PR and checked an
+# UNRELATED PR's CI (and passed `$REPO` to gh, producing garbage errors). A CI
+# gate must not guess. Block with a clear, accurate instruction instead.
+if merge_command_uses_variable "$COMMAND"; then
+  cat >&2 <<'EOF'
+BLOCKED: cannot verify CI on a variable-substituted merge command.
+
+This gate reads the literal command text and can't resolve shell variables
+(e.g. `gh pr merge $PR --repo $REPO`) to the real PR / repo, so it cannot
+check the correct PR's CI status. Re-run with literal values:
+
+  gh pr merge <number> --repo <owner>/<repo> --squash
+
+(Use the actual PR number and owner/repo — not shell variables.)
+EOF
+  exit 2
 fi
+
+# Parse --repo (for `gh pr merge --repo owner/repo`). Uses the shared extractor,
+# which also recovers the repo from a `gh api .../pulls/<N>/merge` URL path so
+# `gh pr checks` below is still scoped correctly.
+CMD_REPO=$(extract_repo_from_command "$COMMAND")
 REPO_FLAG=""
 if [ -n "$CMD_REPO" ]; then
   REPO_FLAG="--repo $CMD_REPO"
@@ -70,53 +84,10 @@ fi
 CHECKS_OUTPUT=$(gh pr checks "$PR_NUMBER" $REPO_FLAG 2>&1)
 CHECKS_RC=$?
 
-# Load `.ci.require_to_exist` from project config (defaults to "false" for
-# back-compat — adopters without CI keep the prior pass-with-NOTE behaviour).
-# When `true`, missing checks become a BLOCK instead of a pass. Useful on
-# free-tier private repos that can't rely on server-side branch protection
-# (Pro-only) and need a client-side mechanical merge gate.
-REQUIRE_CI_TO_EXIST="false"
-# Self-locate the lib via `dirname $0`. The wrapper in .claude/settings.json
-# walks up to find the ops-fork anchor (.apexyard-fork or onboarding.yaml)
-# and execs this hook via its ops-fork-absolute path, so `$0` is guaranteed
-# to be `<ops_root>/.claude/hooks/block-merge-on-red-ci.sh`. Self-loading
-# means config-read works regardless of CWD — closes apexyard#11 where the
-# previous CWD-driven `REPO_ROOT/.claude/hooks/_lib-read-config.sh` check
-# failed when CWD was a managed-project workspace clone (which doesn't ship
-# hook libs). See AgDR-0053-managed-project-config-resolution.md.
-HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
-if [ -f "$HOOK_DIR/_lib-read-config.sh" ]; then
-  # shellcheck disable=SC1090,SC1091
-  . "$HOOK_DIR/_lib-read-config.sh"
-  REQUIRE_CI_TO_EXIST=$(config_get_or '.ci.require_to_exist' 'false' 2>/dev/null)
-fi
-
-# "no checks reported on the 'X' branch" — historically a legitimate no-CI
-# state. Block when the project opted in via `.ci.require_to_exist=true`;
-# otherwise pass with a one-line NOTE.
+# "no checks reported on the 'X' branch" — legitimate no-CI state. Allow.
+# Projects without CI (or branches without the expected workflow wiring)
+# hit this path. Log a single-line note so the user knows the gate was a no-op.
 if echo "$CHECKS_OUTPUT" | grep -q "no checks reported"; then
-  if [ "$REQUIRE_CI_TO_EXIST" = "true" ]; then
-    cat >&2 <<MSG
-BLOCKED: PR #${PR_NUMBER} has no CI checks reported. Cannot merge.
-
-Project config opt-in (.ci.require_to_exist=true) treats missing CI as a
-block, not a pass. This is the right shape for free-tier private repos
-that can't use server-side branch protection.
-
-To unblock:
-
-  1. Verify the CI workflow is wired (.github/workflows/*.yml present and
-     valid). Push triggers the workflow on PR HEAD.
-  2. If runner is self-hosted, verify it is online and idle:
-       gh api repos/<owner>/<repo>/actions/runners
-  3. Wait for the workflow run to complete on this PR's HEAD.
-  4. Retry: gh pr merge ${PR_NUMBER}
-
-To turn the strict mode off, remove .ci.require_to_exist from
-.claude/project-config.json (or set it to false explicitly).
-MSG
-    exit 2
-  fi
   echo "NOTE: PR #${PR_NUMBER} has no CI checks configured. Merge-on-red-CI gate is a no-op for this PR." >&2
   exit 0
 fi

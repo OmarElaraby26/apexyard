@@ -10,7 +10,7 @@ Examples:
 - `fix/GH-45-login-bug`
 - `docs/ENG-99-update-readme`
 
-**Types**: `feature`, `fix`, `refactor`, `chore`, `docs`, `test`, `spike`, `ci`, `build`, `perf`
+**Types**: `feature`, `fix`, `refactor`, `chore`, `docs`, `test`, `spike`, `prototype`, `ci`, `build`, `perf`
 
 The `TICKET-ID` should reference an issue in the project's tracker. Default format: `#58` or `GH-58` (GitHub Issues). The validators in `.claude/hooks/` source the regex from `.tracker.id_pattern` in `.claude/project-config.{defaults,}.json` — the default pattern also matches any uppercase tracker prefix (e.g. `ABC-123`) for teams using Linear, Jira, or similar. See `_lib-tracker.sh` and AgDR-0033 for how to swap the active tracker; ApexYard's out-of-the-box default is per-project GitHub Issues, with one repo's issues never crossing into another repo's PRs.
 
@@ -18,7 +18,7 @@ The `TICKET-ID` should reference an issue in the project's tracker. Default form
 
 Must match: `type(TICKET): description` or `type(TICKET)!: description` (breaking change)
 
-Regex: `^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|spike)\(<TICKET_ID_PATTERN>\)!?:`
+Regex: `^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|spike|prototype)\(<TICKET_ID_PATTERN>\)!?:`
 
 `<TICKET_ID_PATTERN>` is sourced from `.tracker.id_pattern` so adopters get their own tracker's shape validation. Default matches `#123`, `GH-123`, or `[A-Z]{2,10}-[0-9]+` (Jira / Linear / similar).
 
@@ -36,31 +36,10 @@ type(scope)!: subject (breaking change with scope)
 - Detailed change 1
 - Detailed change 2
 
-Refs #123
+Closes #123
 ```
 
 **Types**: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `style`, `perf`
-
-## Issue references — `Refs` vs `Closes`
-
-`Refs #N` is the **default** issue reference for any PR or commit that touches a ticket. It links the PR to the issue WITHOUT auto-closing it on merge, which routes the ticket through the mandatory QA gate (workflows/sdlc.md § Phase 5 — Salim verifies every AC, applies `qa-passed`, then closes).
-
-`Closes #N` / `Fixes #N` / `Resolves #N` are auto-close keywords — GitHub closes the linked issue automatically when the PR merges. **Reserved for issues that carry the `qa-bypass` label** — the ONE exempt label permitted under the narrow default:
-
-| Label | Use |
-|-------|-----|
-| `qa-bypass` | Deliberate, per-ticket explicit exemption. Operator consciously applies it. Use sparingly. |
-
-Every other class of work — chores, docs, spikes, infra, features, bugs — must use `Refs #N` and flow through QA. The narrow exempt set was locked in by AgDR-0032 because class-of-work auto-exemption (the previous five-label set) caused silent bypass when chores merged without ever reaching Salim.
-
-If an issue does NOT carry `qa-bypass` and your PR uses `Closes` (or a synonym), the PR-create gate `block-closes-without-exempt-label.sh` blocks the operation. Switch to `Refs #N` (preferred) OR apply `qa-bypass` to the issue first if the bypass is genuinely warranted.
-
-The exempt set and keyword list are configurable in `.claude/project-config.json`:
-
-- `.qa.exempt_labels[]` — labels that allow auto-close
-- `.qa.autoclose_keywords[]` — keywords that trigger the gate
-
-**Per-project override discipline**: the narrow default (`["qa-bypass"]` only) is the prescribed baseline. Widening the exempt set via override should be a documented, time-bounded decision — record it in an AgDR on the adopting project, name the labels added, name the trigger that would close the override. The default exists because class-of-work auto-exemption produced silent QA bypass; per-project widening reintroduces that risk and should not be casual.
 
 ## File Staging
 

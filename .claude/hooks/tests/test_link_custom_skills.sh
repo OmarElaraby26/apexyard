@@ -18,9 +18,11 @@
 
 set -u
 
-# Force walk-up resolution so sandboxed _lib-ops-root.sh finds the
-# sandbox ops fork instead of the operator's session pin. Same pattern
-# as test_block_merge_on_red_ci.sh Cases 7/8 (apexyard#11/#12).
+# Test isolation (#528): link-custom-skills.sh resolves the ops-root via
+# _lib-ops-root.sh and WRITES symlinks into <ops-root>/.claude/skills/. Inside a
+# live Claude Code session the session pin would resolve to the REAL fork, so a
+# sandbox run would symlink into the real .claude/skills/. Disable the pin so
+# resolution walks up to the sandbox. No-op in headless CI (no pin).
 export APEXYARD_OPS_DISABLE_PIN=1
 
 HOOK_SRC="$(cd "$(dirname "$0")/.." && pwd)/link-custom-skills.sh"

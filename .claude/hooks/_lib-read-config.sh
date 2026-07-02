@@ -89,57 +89,6 @@ _config_overrides_file() {
   [ -n "$root" ] && echo "$root/.claude/project-config.json"
 }
 
-# _config_workspace_overrides_file: when CWD's git toplevel sits inside a
-# registered managed-project workspace under <ops_root>/workspace/<name>/,
-# return that workspace's .claude/project-config.json path (if present).
-# Returns empty string when:
-#   - CWD git toplevel isn't a workspace clone (e.g. operator inside ops fork),
-#   - the workspace isn't registered in apexyard.projects.yaml,
-#   - the workspace's .claude/project-config.json doesn't exist.
-#
-# This is the third layer of config resolution added in apexyard#11 (AgDR-0053).
-# Without it, .ci.require_to_exist and any other project-scoped flag set in
-# `workspace/<name>/.claude/project-config.json` is dead config — the operator
-# follows the runbook's guidance to commit the flag to the project's repo, but
-# the merge-gate hook never reads from there.
-_config_workspace_overrides_file() {
-  local ops_root pwd_toplevel
-  ops_root=$(_config_repo_root)
-  [ -z "$ops_root" ] && return 0
-  pwd_toplevel=$(git rev-parse --show-toplevel 2>/dev/null)
-  [ -z "$pwd_toplevel" ] && return 0
-  # Same path? CWD is at the ops fork itself — no workspace layer applies.
-  [ "$pwd_toplevel" = "$ops_root" ] && return 0
-  # Is the CWD toplevel inside <ops_root>/workspace/<name>/?
-  case "$pwd_toplevel" in
-    "$ops_root/workspace/"*) ;;
-    *) return 0 ;;
-  esac
-  # Extract <name> (first path component after workspace/).
-  local rel_path name
-  rel_path="${pwd_toplevel#"$ops_root"/workspace/}"
-  name="${rel_path%%/*}"
-  [ -z "$name" ] && return 0
-  # Only honour the layer if the project is registered in the registry. This
-  # avoids surprises if a stray dir lives under workspace/ that isn't managed.
-  if [ -f "$ops_root/apexyard.projects.yaml" ]; then
-    if command -v yq >/dev/null 2>&1; then
-      local registered
-      registered=$(yq eval ".projects[] | select(.name == \"${name}\") | .name" \
-        "$ops_root/apexyard.projects.yaml" 2>/dev/null)
-      [ -z "$registered" ] && return 0
-    else
-      # Greppy fallback: look for `- name: <name>` at any indent.
-      if ! grep -qE "^[[:space:]]*-?[[:space:]]*name:[[:space:]]+[\"']?${name}[\"']?[[:space:]]*$" \
-           "$ops_root/apexyard.projects.yaml" 2>/dev/null; then
-        return 0
-      fi
-    fi
-  fi
-  local candidate="$pwd_toplevel/.claude/project-config.json"
-  [ -f "$candidate" ] && echo "$candidate"
-}
-
 _config_load() {
   # Check jq availability once per process.
   if ! command -v jq >/dev/null 2>&1; then
@@ -151,10 +100,9 @@ _config_load() {
     return 0
   fi
 
-  local defaults overrides workspace_overrides
+  local defaults overrides
   defaults=$(_config_defaults_file)
   overrides=$(_config_overrides_file)
-  workspace_overrides=$(_config_workspace_overrides_file)
 
   if [ -z "$defaults" ] || [ ! -f "$defaults" ]; then
     # No defaults file — repo may not be an apexyard fork (e.g. project-inside-workspace).
@@ -162,19 +110,12 @@ _config_load() {
     return 0
   fi
 
-  # Three-layer merge: defaults < ops-fork override < workspace override.
-  # `jq -s '.[0] * .[1] * .[2]'` performs successive shallow merges, with
-  # later operands winning at top-level keys. Missing layers default to {}.
-  local ops_layer="{}"
-  local ws_layer="{}"
-  [ -f "$overrides" ] && ops_layer=$(cat "$overrides")
-  [ -n "$workspace_overrides" ] && [ -f "$workspace_overrides" ] && ws_layer=$(cat "$workspace_overrides")
-
-  jq -s '.[0] * .[1] * .[2]' \
-    "$defaults" \
-    <(printf '%s' "$ops_layer") \
-    <(printf '%s' "$ws_layer") \
-    2>/dev/null || cat "$defaults"
+  if [ -f "$overrides" ]; then
+    # Shallow merge: user overrides win at top-level keys.
+    jq -s '.[0] * .[1]' "$defaults" "$overrides" 2>/dev/null || cat "$defaults"
+  else
+    cat "$defaults"
+  fi
 }
 
 # ------------------------------------------------------------------------------
@@ -188,7 +129,13 @@ config_get() {
     _CONFIG_CACHE=$(_config_load)
   fi
   if command -v jq >/dev/null 2>&1; then
-    echo "$_CONFIG_CACHE" | jq -r "$filter" 2>/dev/null
+    # printf '%s', NOT echo: under an XSI/POSIX shell `echo` interprets backslash
+    # escapes, collapsing a valid JSON escape in the cached config (e.g. `\\0` in
+    # a pre_push command value) into an invalid one — jq then aborts on the whole
+    # document and config_get returns empty for EVERY key, silently dropping all
+    # project-config overrides (incl. split-portfolio portfolio.* paths).
+    # See me2resh/apexyard#629.
+    printf '%s' "$_CONFIG_CACHE" | jq -r "$filter" 2>/dev/null
   else
     return 0
   fi

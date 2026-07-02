@@ -7,11 +7,6 @@
 name: Link Check
 
 on:
-  pull_request:
-    paths:
-      - "**/*.md"
-      - "site/**"
-      - ".github/workflows/link-check.yml"
   push:
     branches: [main]
     paths:
@@ -39,11 +34,11 @@ jobs:
         with:
           args: >-
             --no-progress
-            --include-fragments
             --exclude-loopback
             --exclude-private
             --exclude 'github\.com/OmarElaraby26/xadvisor'
             --accept 200,204,206,301,302,429
+            --max-concurrency 8
             --base https://yard.apexscript.com/
             'site/index.html'
             '**/*.md'

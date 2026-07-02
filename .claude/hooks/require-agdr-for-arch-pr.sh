@@ -51,17 +51,53 @@ fi
 extract_flag_value() {
   # $1 = flag regex (e.g. --title | -t). Matches:
   #   --title "value with spaces"
-  #   --title 'value'
+  #   --title 'value with spaces'
   #   --title value
+  #
+  # The original sed form used `[^"]*` which truncated at the first embedded
+  # double-quote inside the body value — false-blocking PRs whose body contained
+  # a `"` before the AgDR reference (me2resh/apexyard#461). The fix mirrors the
+  # already-corrected extractor in block-private-refs-in-public-repos.sh
+  # (me2resh/apexyard#227): awk with a greedy `(.*)` match anchored on the next
+  # recognised flag boundary (whitespace + `--<letter>`) or end-of-string. This
+  # captures the full quoted span, including any embedded quotes, without
+  # bleeding past the start of the next flag.
   local flag_re="$1"
   local cmd="$2"
-  local v
-  v=$(echo "$cmd" | sed -nE "s/.*(${flag_re})[[:space:]]+\"([^\"]*)\".*/\2/p" | head -1)
-  if [ -n "$v" ]; then echo "$v"; return; fi
-  v=$(echo "$cmd" | sed -nE "s/.*(${flag_re})[[:space:]]+'([^']*)'.*/\2/p" | head -1)
-  if [ -n "$v" ]; then echo "$v"; return; fi
-  v=$(echo "$cmd" | sed -nE "s/.*(${flag_re})[[:space:]]+([^[:space:]]+).*/\2/p" | head -1)
-  echo "$v"
+  printf '%s' "$cmd" | awk -v FLAG_RE="$flag_re" -v SQ="'" '
+    { buf = (NR == 1 ? $0 : buf "\n" $0) }
+    END {
+      s = buf
+      # Double-quoted value: greedy `(.*)` anchored on next flag or EOS.
+      re = "(" FLAG_RE ")[[:space:]]+\"(.*)\"([[:space:]]+--[a-zA-Z]|[[:space:]]*$)"
+      if (match(s, re)) {
+        chunk = substr(s, RSTART, RLENGTH)
+        sub("^(" FLAG_RE ")[[:space:]]+\"", "", chunk)
+        sub("\"([[:space:]]+--[a-zA-Z].*)?$", "", chunk)
+        sub("\"[[:space:]]*$", "", chunk)
+        print chunk
+        exit
+      }
+      # Single-quoted value: same greedy + anchor treatment.
+      re = "(" FLAG_RE ")[[:space:]]+" SQ "(.*)" SQ "([[:space:]]+--[a-zA-Z]|[[:space:]]*$)"
+      if (match(s, re)) {
+        chunk = substr(s, RSTART, RLENGTH)
+        sub("^(" FLAG_RE ")[[:space:]]+" SQ, "", chunk)
+        sub(SQ "([[:space:]]+--[a-zA-Z].*)?$", "", chunk)
+        sub(SQ "[[:space:]]*$", "", chunk)
+        print chunk
+        exit
+      }
+      # Unquoted value: single token, embedded quotes irrelevant.
+      re = "(" FLAG_RE ")[[:space:]]+[^[:space:]]+"
+      if (match(s, re)) {
+        chunk = substr(s, RSTART, RLENGTH)
+        sub("^(" FLAG_RE ")[[:space:]]+", "", chunk)
+        print chunk
+        exit
+      }
+    }
+  '
 }
 
 TITLE=$(extract_flag_value '--title|-t' "$COMMAND")
@@ -112,26 +148,114 @@ if [ -z "$REPO_ROOT" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 2b. Spike exemption (apexyard#180).
+# 2a-0. Source the PR-repo lib up front. We need two things from it:
+#   - pr_cmd_cd_target  → re-root the diff to the cd-target (#669)
+#   - pr_repo_matches_cwd → the cross-repo guard (#464)
+# ---------------------------------------------------------------------------
+
+HOOK_DIR_AGDR="$(cd "$(dirname "$0")" && pwd)"
+PR_REPO_LIB_OK=0
+if [ -f "$HOOK_DIR_AGDR/_lib-pr-repo.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$HOOK_DIR_AGDR/_lib-pr-repo.sh"
+  PR_REPO_LIB_OK=1
+fi
+
+# ---------------------------------------------------------------------------
+# 2a-i-a. Re-root the diff to the command's `cd` target (me2resh/apexyard#669).
 #
-# Spike work is hypothesis-driven, time-boxed, throw-away exploration. AgDRs
-# capture decisions that should persist; spikes write disposition memos
-# instead. The exemption fires when ANY of:
+# The harness fires this PreToolUse hook BEFORE the shell runs the command, so
+# a `cd <repo> && gh pr create …` prefix has NOT yet changed the working dir —
+# the hook's cwd is still the ops fork. Without re-rooting, the diff below
+# reflects the FORK's working tree (which may carry recent arch-path commits),
+# producing a phantom "architecture changes" block on a PR that is actually
+# being created in a DIFFERENT repo (a split-portfolio private repo, or a
+# `workspace/<project>/` clone in single-fork mode) and touches none of them.
 #
-#   (a) the PR title carries `spike(...)` as the conventional-commit type
-#   (b) the active ticket marker references a `[Spike]`-prefixed ticket
-#   (c) the branch is named `spike/<TICKET-ID>-...`
+# Fix: if the command begins with `cd <path> &&`, evaluate all working-tree
+# git operations against <path>'s repo. Config + session markers stay anchored
+# to REPO_ROOT (the ops fork) — only the *diff* tree moves.
+# ---------------------------------------------------------------------------
+
+DIFF_DIR="$REPO_ROOT"
+if [ "$PR_REPO_LIB_OK" = 1 ]; then
+  CD_TARGET=$(pr_cmd_cd_target "$COMMAND")
+  if [ -n "$CD_TARGET" ]; then
+    CD_TOPLEVEL=$(git -C "$CD_TARGET" rev-parse --show-toplevel 2>/dev/null)
+    if [ -n "$CD_TOPLEVEL" ]; then
+      DIFF_DIR="$CD_TOPLEVEL"
+    fi
+    # If <path> is not a readable git tree, fall through with DIFF_DIR=REPO_ROOT
+    # — no worse than the pre-#669 behaviour.
+  fi
+fi
+
+# All working-tree git operations below run against DIFF_DIR (the repo the PR
+# is actually being created in). Markers + config remain anchored to REPO_ROOT.
+gitd() { git -C "$DIFF_DIR" "$@"; }
+
+# ---------------------------------------------------------------------------
+# 2a-i. Cross-repo guard (me2resh/apexyard#464).
+#
+# When the hook fires on a `gh pr create --repo <X>` command but the diff tree
+# belongs to a DIFFERENT repo (e.g. the session is pinned to the ops-fork while
+# the command targets a sibling repo with no local checkout), the diff computed
+# below reflects the wrong working tree — NOT the PR's actual diff. That
+# produces false-positive blocks for PRs that don't touch any framework
+# architecture paths.
+#
+# Fix: compare the PR target repo (--repo flag, or implicit same-repo) to the
+# origin remote of the diff tree. If they differ, we cannot compute a
+# meaningful diff for this PR from here → exit 0 (no-op).
+#
+# Framework gating is preserved: when creating a me2resh/apexyard PR from the
+# framework cwd, the --repo value matches origin → the guard does NOT fire and
+# the diff check runs as usual.
+# ---------------------------------------------------------------------------
+
+if [ "$PR_REPO_LIB_OK" = 1 ]; then
+  if ! pr_repo_matches_cwd "$COMMAND" "$DIFF_DIR"; then
+    # PR targets a different repo than the diff tree — cannot evaluate the
+    # arch-path diff from here. Silently pass; the hook in that repo's own CI
+    # context will gate this correctly.
+    exit 0
+  fi
+else
+  # _lib-pr-repo.sh is missing (partial checkout or manual hook copy without
+  # the lib). The cross-repo guard cannot run, which means a `gh pr create
+  # --repo <sibling>` command will fall through to the ops-fork diff — exactly
+  # the false-positive bug #464 this guard was introduced to prevent.
+  # Emit a loud warning so the degradation is visible; do NOT silently revert.
+  # Match all four flag forms: --repo VALUE, --repo=VALUE, -R VALUE, -R=VALUE.
+  CMD_REPO_PRESENT=$(printf '%s' "$COMMAND" | grep -cE '(^|[[:space:]])(--repo[=[:space:]]|-R[=[:space:]])' || true)
+  if [ "${CMD_REPO_PRESENT:-0}" -gt 0 ]; then
+    echo "WARN: require-agdr-for-arch-pr.sh: _lib-pr-repo.sh not found at $HOOK_DIR_AGDR — cross-repo guard DEGRADED. A \`gh pr create --repo <sibling>\` command will be evaluated against the current working tree's diff, which may produce false-positive blocks (me2resh/apexyard#464). Ensure _lib-pr-repo.sh is present alongside this hook." >&2
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 2b. Spike + prototype exemption (apexyard#180, #673).
+#
+# Spike work (technical) and prototype work (throw-away UX/demo) are both
+# time-boxed exploration. AgDRs capture decisions that should persist; these
+# write disposition memos instead. The exemption fires when ANY of:
+#
+#   (a) the PR title carries `spike(...)` or `prototype(...)` as the type
+#   (b) the active ticket marker references a `[Spike]` or `[Prototype]` ticket
+#   (c) the branch is named `spike/<TICKET-ID>-...` or `prototype/...`
 #
 # Code review (Rex) and the security auditor still apply — exemptions are
 # surgical, not blanket. See .claude/rules/workflow-gates.md § Spike work.
 # ---------------------------------------------------------------------------
 spike_pr_exempt() {
-  # (a) spike(...) PR title
-  if echo "$TITLE" | grep -qE '^spike\([^)]+\)!?:'; then
+  # (a) spike(...) PR title. Prototype work (apexyard#673) is throw-away
+  # UX/demo exploration and shares the spike exemption: `prototype(...)` PR
+  # type, `[Prototype]` ticket prefix, or `prototype/` branch all bypass too.
+  if echo "$TITLE" | grep -qE '^(spike|prototype)\([^)]+\)!?:'; then
     return 0
   fi
 
-  # (b) active ticket marker has [Spike] prefix
+  # (b) active ticket marker has [Spike] or [Prototype] prefix
   local marker_home="${REPO_ROOT}"
   # Walk up to find the ops root. Honours both the v2 `.apexyard-fork`
   # marker and the legacy v1 anchor (onboarding.yaml + apexyard.projects.yaml).
@@ -154,28 +278,28 @@ spike_pr_exempt() {
         marker_home="$r"
         break
       fi
-      r=$(dirname "$r")
+      parent=$(dirname "$r"); [ "$parent" = "$r" ] && break; r="$parent"
     done
   fi
 
   if [ -f "$marker_home/.claude/session/current-ticket" ]; then
-    if grep -qE '^title=\[Spike\]' "$marker_home/.claude/session/current-ticket" 2>/dev/null; then
+    if grep -qE '^title=\[(Spike|Prototype)\]' "$marker_home/.claude/session/current-ticket" 2>/dev/null; then
       return 0
     fi
   fi
   if [ -d "$marker_home/.claude/session/tickets" ]; then
     for marker in "$marker_home/.claude/session/tickets"/*; do
       [ -f "$marker" ] || continue
-      if grep -qE '^title=\[Spike\]' "$marker" 2>/dev/null; then
+      if grep -qE '^title=\[(Spike|Prototype)\]' "$marker" 2>/dev/null; then
         return 0
       fi
     done
   fi
 
-  # (c) branch named spike/...
+  # (c) branch named spike/... or prototype/...
   local branch
-  branch=$(git -C "$REPO_ROOT" branch --show-current 2>/dev/null)
-  if echo "$branch" | grep -qE '^spike/'; then
+  branch=$(gitd branch --show-current 2>/dev/null)
+  if echo "$branch" | grep -qE '^(spike|prototype)/'; then
     return 0
   fi
 
@@ -183,7 +307,7 @@ spike_pr_exempt() {
 }
 
 if spike_pr_exempt; then
-  echo "WARN: spike PR detected — require-agdr-for-arch-pr bypassed. AgDRs not required for hypothesis-driven throw-away work; ship a memo on /spike-close instead. See .claude/rules/workflow-gates.md § Spike work." >&2
+  echo "WARN: spike/prototype PR detected — require-agdr-for-arch-pr bypassed. AgDRs not required for throw-away exploration; ship a memo on /spike-close or /prototype-close instead. See .claude/rules/workflow-gates.md § Spike work." >&2
   exit 0
 fi
 
@@ -203,7 +327,7 @@ BASE_REF=""
 resolve_ref() {
   # Verify a ref exists; echo it if so, else empty.
   local ref="$1"
-  if git rev-parse --verify --quiet "$ref" >/dev/null 2>&1; then
+  if gitd rev-parse --verify --quiet "$ref" >/dev/null 2>&1; then
     echo "$ref"
   fi
 }
@@ -228,12 +352,12 @@ if [ -z "$BASE_REF" ]; then
   exit 0
 fi
 
-MERGE_BASE=$(git merge-base HEAD "$BASE_REF" 2>/dev/null)
+MERGE_BASE=$(gitd merge-base HEAD "$BASE_REF" 2>/dev/null)
 if [ -z "$MERGE_BASE" ]; then
   exit 0
 fi
 
-CHANGED_FILES=$(git diff --name-only "$MERGE_BASE"..HEAD 2>/dev/null)
+CHANGED_FILES=$(gitd diff --name-only "$MERGE_BASE"..HEAD 2>/dev/null)
 if [ -z "$CHANGED_FILES" ]; then
   # No files changed — nothing to evaluate.
   exit 0
@@ -363,8 +487,8 @@ while IFS= read -r depfile; do
     [ -z "$file" ] && continue
     case "$depfile" in
       package.json)
-        BASE_JSON=$(git show "$MERGE_BASE:$file" 2>/dev/null)
-        HEAD_JSON=$(git show "HEAD:$file" 2>/dev/null)
+        BASE_JSON=$(gitd show "$MERGE_BASE:$file" 2>/dev/null)
+        HEAD_JSON=$(gitd show "HEAD:$file" 2>/dev/null)
         # File may be newly added → BASE_JSON empty → any deps are additions.
         if [ -z "$BASE_JSON" ]; then
           if [ -n "$HEAD_JSON" ] && command -v jq >/dev/null 2>&1; then
@@ -398,7 +522,7 @@ while IFS= read -r depfile; do
         ;;
       *)
         # Non-JSON heuristic. Pull the unified diff for this file.
-        DIFF=$(git diff "$MERGE_BASE"..HEAD -- "$file" 2>/dev/null)
+        DIFF=$(gitd diff "$MERGE_BASE"..HEAD -- "$file" 2>/dev/null)
         [ -z "$DIFF" ] && continue
         ADDED_LINES=$(echo "$DIFF" | grep -cE '^\+[^+]' || true)
         REMOVED_LINES=$(echo "$DIFF" | grep -cE '^-[^-]' || true)

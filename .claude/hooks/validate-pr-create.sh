@@ -16,13 +16,73 @@ if [ -z "$COMMAND" ]; then
   exit 0
 fi
 
-# Parse --repo from the gh command for cross-repo PR creation
-CMD_REPO=$(echo "$COMMAND" | sed -nE 's/.*--repo[[:space:]]+([^[:space:]]+).*/\1/p' | head -1)
+# Normalize backslash line-continuation sequences so multi-line gh commands
+# parse as a single logical line for all subsequent flag extraction.
+# Replaces every '\<newline>' pair with a single space.
+# Fixes apexyard#743 Bug 2: without normalization, a --repo value split onto
+# its own continuation line could be mis-extracted (the trailing '\' captured
+# instead of the repo slug, yielding garbled TRACKER_REPO like "(hook)").
+# NOTE: must be bash-3.2-safe (macOS default). The combined ANSI-C pattern
+# ${COMMAND//$'\\\n'/ } is a silent NO-OP under bash 3.2 — the newline in the
+# pattern doesn't match. Holding the newline in a var and escaping the
+# backslash separately works on both 3.2 and 5.x (verified via `od -c`).
+nl=$'\n'; COMMAND="${COMMAND//\\$nl/ }"
 
-# Only check on gh pr create
-if ! echo "$COMMAND" | grep -qE '\bgh\s+pr\s+create\b'; then
+# Parse --repo / -R from the gh command for cross-repo PR creation.
+# Handles: --repo VALUE, --repo=VALUE, -R VALUE, -R=VALUE.
+# Source _lib-pr-repo.sh when available (DRY — it owns the canonical parser).
+# Inline fallback preserved for partial checkouts without the lib.
+CMD_REPO=""
+_VPC_HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$_VPC_HOOK_DIR/_lib-pr-repo.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$_VPC_HOOK_DIR/_lib-pr-repo.sh"
+  CMD_REPO=$(pr_cmd_target_repo "$COMMAND")
+else
+  # Inline fallback: handles all four forms without the lib.
+  # Uses greedy `.*[[:space:]]<FLAG>` — see _lib-pr-repo.sh for the BSD-sed
+  # rationale (alternation capture groups don't work reliably on macOS sed).
+  CMD_REPO=$(printf '%s' "$COMMAND" | sed -nE 's/.*[[:space:]]--repo[[:space:]]+([^[:space:]]+).*/\1/p' | head -1)
+  if [ -z "$CMD_REPO" ]; then
+    CMD_REPO=$(printf '%s' "$COMMAND" | sed -nE 's/.*[[:space:]]--repo=([^[:space:]]+).*/\1/p' | head -1)
+  fi
+  if [ -z "$CMD_REPO" ]; then
+    CMD_REPO=$(printf '%s' "$COMMAND" | sed -nE 's/.*[[:space:]]-R[[:space:]]+([^[:space:]]+).*/\1/p' | head -1)
+  fi
+  if [ -z "$CMD_REPO" ]; then
+    CMD_REPO=$(printf '%s' "$COMMAND" | sed -nE 's/.*[[:space:]]-R=([^[:space:]]+).*/\1/p' | head -1)
+  fi
+  # Strip optional host prefix.
+  if [ -n "$CMD_REPO" ]; then
+    CMD_REPO=$(printf '%s' "$CMD_REPO" | sed -E 's|^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/||')
+  fi
+fi
+
+# Extract the cd-target early so it is available for --body-file path
+# resolution below AND for the branch-name fallback near the end.
+# pr_cmd_cd_target is provided by _lib-pr-repo.sh, sourced above.
+CD_TARGET=""
+if command -v pr_cmd_cd_target >/dev/null 2>&1; then
+  CD_TARGET=$(pr_cmd_cd_target "$COMMAND")
+fi
+
+# Gate: only validate when the COMMAND HEAD is 'gh pr create'.
+#
+# Checking the raw command string (the pre-#743 approach) fires on any command
+# whose --body inline content happens to mention "gh pr create" — for example,
+# a bug-report filed via 'gh issue create --body "example: gh pr create ..."'.
+# Stripping the body payload (--body / --body-file / -F and everything after)
+# before the gate check means only the actual command verb is tested.
+# Fixes apexyard#743 Bug 3.
+_cmd_for_gate=$(printf '%s' "$COMMAND" \
+  | sed -E 's/[[:space:]]--body-file[[:space:]].*//' \
+  | sed -E 's/[[:space:]]--body[[:space:]].*//' \
+  | sed -E 's/[[:space:]]-F[[:space:]].*//')
+if ! printf '%s' "$_cmd_for_gate" | grep -qE '\bgh[[:space:]]+pr[[:space:]]+create\b'; then
+  unset _cmd_for_gate
   exit 0
 fi
+unset _cmd_for_gate
 
 ERRORS=""
 
@@ -76,7 +136,7 @@ if [ -f "$HOOK_DIR/_lib-read-config.sh" ]; then
   PR_TYPES=$(config_get '.pr.title_type_whitelist[]' 2>/dev/null | paste -sd'|' -)
 fi
 if [ -z "$PR_TYPES" ]; then
-  PR_TYPES="feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert"
+  PR_TYPES="feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|release|spike|sync"
 fi
 
 TICKET_REF=""
@@ -105,30 +165,12 @@ if [ -n "$TICKET_REF" ]; then
   # Extract digits from the ref (works for both #N and PREFIX-N)
   TICKET_NUM=$(echo "$TICKET_REF" | grep -oE '[0-9]+$')
 
-  # Load the tracker library (kind / view command / id pattern).
-  # Source from HOOK_DIR so we don't depend on cwd-relative resolution
-  # (inside workspace/<project>/ the lib still lives at the ops fork). The
-  # lib itself reads config via _lib-read-config.sh which now resolves
-  # from the ops fork too (me2resh/apexyard#310).
-  TRACKER_KIND="gh"
-  if [ -f "$HOOK_DIR/_lib-tracker.sh" ]; then
-    # shellcheck disable=SC1090,SC1091
-    . "$HOOK_DIR/_lib-tracker.sh"
-    TRACKER_KIND=$(tracker_kind)
-  fi
-
-  # Short-circuit: existence verification disabled.
-  if [ "$TRACKER_KIND" = "none" ]; then
-    # Shape-only validation already happened above (PR title regex). Nothing
-    # more to do for this branch.
-    TICKET_NUM=""
-  fi
-
-  # Resolve tracker repo: prefer --repo flag, then ops-fork-rooted
-  # project-config.json (.tracker_repo), then origin remote of the
-  # current cwd's git checkout. The ops-fork-rooted read matters when the
-  # operator is inside workspace/<project>/ — the project clone's git root
-  # is NOT where the framework config lives.
+  # Resolve tracker repo FIRST (before the kind lookup): prefer --repo flag,
+  # then ops-fork-rooted project-config.json (.tracker_repo), then origin
+  # remote of the current cwd's git checkout. The ops-fork-rooted read matters
+  # when the operator is inside workspace/<project>/ — the project clone's git
+  # root is NOT where the framework config lives. Resolved up front so the kind
+  # lookup below can key off the target repo for a per-project override (#670).
   TRACKER_REPO=""
   if [ -n "$CMD_REPO" ]; then
     TRACKER_REPO="$CMD_REPO"
@@ -141,6 +183,26 @@ if [ -n "$TICKET_REF" ]; then
     TRACKER_REPO=$(echo "$ORIGIN_URL" | sed -nE 's|.*[:/]([^/:]+/[^/]+)\.git$|\1|p; s|.*[:/]([^/:]+/[^/]+)$|\1|p' | head -1)
   fi
 
+  # Load the tracker library (kind / view command / id pattern).
+  # Source from HOOK_DIR so we don't depend on cwd-relative resolution
+  # (inside workspace/<project>/ the lib still lives at the ops fork). The
+  # lib itself reads config via _lib-read-config.sh which now resolves
+  # from the ops fork too (me2resh/apexyard#310). The kind is resolved for
+  # TRACKER_REPO so a per-project override wins over the global block (#670).
+  TRACKER_KIND="gh"
+  if [ -f "$HOOK_DIR/_lib-tracker.sh" ]; then
+    # shellcheck disable=SC1090,SC1091
+    . "$HOOK_DIR/_lib-tracker.sh"
+    TRACKER_KIND=$(tracker_kind "$TRACKER_REPO")
+  fi
+
+  # Short-circuit: existence verification disabled.
+  if [ "$TRACKER_KIND" = "none" ]; then
+    # Shape-only validation already happened above (PR title regex). Nothing
+    # more to do for this branch.
+    TICKET_NUM=""
+  fi
+
   # Optional upstream fallback (me2resh/apexyard#207). When the primary
   # tracker resolution returns nothing for #N, recheck against the `upstream`
   # remote if one is configured. Lets a fork's `fix(#N)` validate when the
@@ -150,6 +212,16 @@ if [ -n "$TICKET_REF" ]; then
   #
   # The upstream fallback only makes sense for the gh kind — Linear / Jira /
   # Asana don't have a fork-of-a-tracker concept.
+  #
+  # Cross-repo guard (me2resh/apexyard#464): when `--repo` is set and the PR
+  # targets a repo that is NOT a fork of the current git tree's upstream, the
+  # fallback would resolve to an UNRELATED repo (e.g. session pinned to the
+  # ops-fork; --repo points at a sibling repo; upstream remote of the ops-fork
+  # returns me2resh/apexyard, which has no relation to the sibling PR). Suppress
+  # the upstream fallback in that case by checking whether TRACKER_REPO shares
+  # the upstream lineage (either it IS the upstream, or the upstream IS a fork
+  # of it). If TRACKER_REPO matches neither origin nor upstream → cross-repo
+  # context → no fallback.
   UPSTREAM_REPO=""
   if [ "$TRACKER_KIND" = "gh" ] && git remote get-url upstream >/dev/null 2>&1; then
     UPSTREAM_URL=$(git remote get-url upstream 2>/dev/null)
@@ -159,6 +231,42 @@ if [ -n "$TICKET_REF" ]; then
     # --repo on the gh command points at upstream directly).
     if [ "$UPSTREAM_REPO" = "$TRACKER_REPO" ]; then
       UPSTREAM_REPO=""
+    fi
+    # Cross-repo guard (#464): if the primary TRACKER_REPO was set via the
+    # --repo flag (CMD_REPO is non-empty), it means the operator explicitly
+    # named the target repo. Only allow the upstream fallback when the
+    # explicitly-named target is "related" to this git tree's remotes —
+    # i.e. TRACKER_REPO equals the current origin slug OR equals the
+    # upstream slug. When it matches neither, the `upstream` remote of the
+    # current working tree belongs to a completely different project lineage
+    # and must not be consulted as a ticket-existence fallback.
+    if [ -n "$CMD_REPO" ] && [ -n "$UPSTREAM_REPO" ]; then
+      ORIGIN_SLUG_VAL=""
+      if [ -f "$HOOK_DIR/_lib-pr-repo.sh" ]; then
+        # shellcheck source=/dev/null
+        . "$HOOK_DIR/_lib-pr-repo.sh"
+        ORIGIN_SLUG_VAL=$(git_origin_repo "$REPO_ROOT")
+      else
+        # _lib-pr-repo.sh is missing (partial checkout or manual hook copy
+        # without the lib). Fall back to inline slug extraction. This is a
+        # degraded state — emit a visible warning so the operator knows the
+        # cross-repo guard is running without its purpose-built library
+        # (me2resh/apexyard#464). The inline fallback preserves the guard
+        # logic, so the protection is not silently lost.
+        echo "WARN: validate-pr-create.sh: _lib-pr-repo.sh not found at $HOOK_DIR — cross-repo guard running with inline fallback. Ensure _lib-pr-repo.sh is present alongside this hook for full coverage." >&2
+        _RAW_ORIGIN=$(git remote get-url origin 2>/dev/null)
+        ORIGIN_SLUG_VAL=$(echo "$_RAW_ORIGIN" | sed -nE 's|.*[:/]([^/:]+/[^/]+)\.git$|\1|p; s|.*[:/]([^/:]+/[^/]+)$|\1|p' | head -1)
+      fi
+      # Normalise to lowercase for comparison (GitHub repos are case-insensitive).
+      CMD_REPO_LC=$(printf '%s' "$CMD_REPO" | tr '[:upper:]' '[:lower:]')
+      ORIGIN_LC=$(printf '%s' "$ORIGIN_SLUG_VAL" | tr '[:upper:]' '[:lower:]')
+      UPSTREAM_LC=$(printf '%s' "$UPSTREAM_REPO" | tr '[:upper:]' '[:lower:]')
+      # Allow fallback only when the PR targets the origin or its upstream.
+      if [ "$CMD_REPO_LC" != "$ORIGIN_LC" ] && [ "$CMD_REPO_LC" != "$UPSTREAM_LC" ]; then
+        # The PR is targeting a completely different repo lineage.
+        # Suppress the upstream fallback to avoid cross-repo false lookups.
+        UPSTREAM_REPO=""
+      fi
     fi
   fi
 
@@ -176,7 +284,18 @@ if [ -n "$TICKET_REF" ]; then
         MATCHED_REPO="$UPSTREAM_REPO"
       fi
     fi
-    if [ -z "$ISSUE_JSON" ]; then
+    if [ -z "$ISSUE_JSON" ] && [ "$TRACKER_KIND" != "gh" ]; then
+      # Non-gh tracker (Linear / Jira / Asana / custom) returned nothing — the
+      # tracker CLI is absent, unauthenticated, or not queryable from this
+      # environment (#501). Do NOT block: the title already passed the shape
+      # check against tracker_id_pattern, which is all we can assert without a
+      # working CLI. Blocking here would make it impossible to open a PR that
+      # references a real, valid non-GitHub ticket. Hard existence enforcement
+      # is retained ONLY for tracker.kind == gh (the block below).
+      echo "WARN: validate-pr-create.sh: tracker '${TRACKER_KIND}' not queryable here — ${TICKET_REF} accepted on shape only (no existence check)." >&2
+      ISSUE_JSON=""
+      TICKET_NUM=""
+    elif [ -z "$ISSUE_JSON" ]; then
       # Name both trackers in the error when an upstream fallback was tried,
       # so the operator sees exactly where the lookup was attempted.
       if [ -n "$UPSTREAM_REPO" ]; then
@@ -250,9 +369,26 @@ fi
 # the check with a visible stderr WARN. Default marker is
 # `<!-- pr-sections: skip -->`.
 BODY_CONTENT=""
-BODY_FILE=$(echo "$COMMAND" | sed -nE 's/.*--body-file[[:space:]]+([^[:space:]]+).*/\1/p' | head -1)
-if [ -n "$BODY_FILE" ] && [ -f "$BODY_FILE" ]; then
-  BODY_CONTENT=$(cat "$BODY_FILE")
+# Extract --body-file path. Handles --body-file and the -F short form.
+# After continuation normalization (above) the command is one logical line.
+BODY_FILE=$(printf '%s' "$COMMAND" | sed -nE 's/.*--body-file[[:space:]]+([^[:space:]]+).*/\1/p' | head -1)
+if [ -z "$BODY_FILE" ]; then
+  BODY_FILE=$(printf '%s' "$COMMAND" | sed -nE 's/.*[[:space:]]-F[[:space:]]+([^[:space:]]+).*/\1/p' | head -1)
+fi
+if [ -n "$BODY_FILE" ]; then
+  # Resolve relative paths against the command's cd-target (if any), so
+  # 'cd /project && gh pr create --body-file body.md' finds the file at
+  # /project/body.md rather than testing against the hook's own CWD.
+  # Fixes apexyard#743 Bug 1 for the relative-path variant.
+  if [[ "$BODY_FILE" != /* ]] && [ -n "$CD_TARGET" ]; then
+    BODY_FILE="${CD_TARGET}/${BODY_FILE}"
+  fi
+  if [ -f "$BODY_FILE" ]; then
+    BODY_CONTENT=$(cat "$BODY_FILE")
+  else
+    echo "WARN: validate-pr-create.sh: --body-file '${BODY_FILE}' not readable from hook context; section check may miss content." >&2
+    # Do not hard-block: we cannot inspect a file we cannot read.
+  fi
 fi
 
 if echo "$COMMAND" | grep -qE '\-\-body(-file)?\b'; then
@@ -387,14 +523,49 @@ fi
 # harness $PWD may still be a sibling worktree's directory). Falls back
 # to local HEAD when `--head` isn't passed — preserves today's behaviour
 # for anyone using the implicit-branch shape. See me2resh/apexyard#194.
+#
+# The local-HEAD fallback MUST resolve against the repo the command actually
+# runs in — not the hook's own cwd. The harness fires this PreToolUse hook
+# BEFORE the shell executes the command, so a `cd <repo> && gh pr create …`
+# prefix has NOT yet changed the working dir: the hook's cwd is still the ops
+# fork (on, e.g., `dev`). Without re-rooting, the fallback reads the ops-fork's
+# branch and false-blocks a PR for a *different* managed repo (e.g. "Branch
+# 'dev' missing ticket ID"). Same class as #669/#687 for the merge gates +
+# arch-PR hook. See me2resh/apexyard#693.
+#
+# Re-root via pr_cmd_cd_target (from _lib-pr-repo.sh, already sourced above as
+# $CMD_REPO is parsed): if the command begins with `cd <path> && …`, resolve
+# the fallback branch with `git -C <path>`. With no leading `cd` (or <path>
+# not a git tree), this is a no-op and the fallback stays byte-for-byte
+# equivalent to the pre-#693 behaviour. The `--head` path is unaffected, and
+# the PR-title check above is independent of cwd.
+# CD_TARGET was extracted early (near top of script) for --body-file path
+# resolution; reuse it here for the branch-name fallback below.
+BRANCH_DIR=""
+if [ -n "$CD_TARGET" ]; then
+  CD_TOPLEVEL=$(git -C "$CD_TARGET" rev-parse --show-toplevel 2>/dev/null)
+  if [ -n "$CD_TOPLEVEL" ]; then
+    BRANCH_DIR="$CD_TOPLEVEL"
+  fi
+fi
 HEAD_FLAG=$(echo "$COMMAND" | sed -nE 's/.*--head[[:space:]]+([^[:space:]]+).*/\1/p' | head -1)
-CURRENT_BRANCH="${HEAD_FLAG:-$(git branch --show-current 2>/dev/null)}"
+if [ -n "$HEAD_FLAG" ]; then
+  CURRENT_BRANCH="$HEAD_FLAG"
+elif [ -n "$BRANCH_DIR" ]; then
+  CURRENT_BRANCH=$(git -C "$BRANCH_DIR" branch --show-current 2>/dev/null)
+else
+  CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
+fi
 if [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" != "main" ] && [ "$CURRENT_BRANCH" != "master" ]; then
   # Release-cut branches are exempt — same recognition `validate-branch-name.sh`
   # added in me2resh/apexyard#168 / #169. Release branches don't carry a
-  # ticket-id because the release itself is the ticket.
-  if echo "$CURRENT_BRANCH" | grep -qE '^release/v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$'; then
-    :  # release branch, exempt — fall through to the rest of the validator
+  # ticket-id because the release itself is the ticket. The /release-sync
+  # branch `sync/main-to-dev-after-vN.N.N` is exempt for the same reason
+  # (the release being synced is the ticket) — see apexyard#458 and the
+  # /release-sync skill. The PR title still references a live ticket via
+  # `sync(#N):`, which the title check above validates.
+  if echo "$CURRENT_BRANCH" | grep -qE '^release/v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$|^sync/main-to-dev-after-v[0-9]+\.[0-9]+\.[0-9]+$'; then
+    :  # release-cut or release-sync branch, exempt — fall through to the rest of the validator
   elif ! echo "$CURRENT_BRANCH" | grep -qE '[A-Z]{2,10}-[0-9]+|GH-[0-9]+|#[0-9]+'; then
     ERRORS="${ERRORS}Branch '$CURRENT_BRANCH' missing ticket ID.\n"
   fi

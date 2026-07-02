@@ -4,17 +4,22 @@
 # in CLAUDE.md, workflows/sdlc.md, or .claude/rules/workflow-gates.md.
 #
 # Active tickets are declared by the /start-ticket skill. The marker
-# layout is two-tier (apexyard#41):
+# layout is three-tier (apexyard#41 + #513):
 #
-#   ops_root/.claude/session/tickets/<project>    ← per-project, preferred
-#   ops_root/.claude/session/current-ticket       ← ops-repo / fallback
+#   ops_root/.claude/session/tickets/<project>/<branch>  ← per-worktree (#513)
+#   ops_root/.claude/session/tickets/<project>           ← per-project (#41)
+#   ops_root/.claude/session/current-ticket              ← ops-repo / fallback
 #
-# Resolution order for a given FILE_PATH:
-#   1. If FILE_PATH is under ops_root/workspace/<project>/, look up
-#      ops_root/.claude/session/tickets/<project>. If present → exempt.
-#   2. Fall back to ops_root/.claude/session/current-ticket. If present →
-#      exempt.
+# Resolution order for a given FILE_PATH under ops_root/workspace/<project>/:
+#   0. If the file's repo is on a git worktree branch (or CLAUDE_WORKTREE_BRANCH
+#      is set), look up tickets/<project>/<safe-branch>. If present → exempt.
+#      (Lets parallel agents on the SAME project hold independent tickets.)
+#   1. Look up tickets/<project> (a FILE). If present → exempt.
+#   2. Fall back to current-ticket. If present → exempt.
 #   3. Otherwise, block with instructions.
+#
+# tickets/<project> is a FILE in single-agent mode, a DIRECTORY in worktree
+# mode; the `-f` tests keep tiers 0 and 1 from conflicting.
 #
 # Ops root is the apexyard fork root (has both onboarding.yaml and
 # apexyard.projects.yaml at the top level). It's discovered by walking
@@ -62,22 +67,126 @@ if [ "$TOOL_NAME" = "Bash" ]; then
     exit 0
   fi
 
+  # Deletion-only (rm without any content-writing sibling) does not add repo
+  # content, so it should not require a ticket (#569).
+  if bash_command_is_deletion_only "$COMMAND"; then
+    exit 0
+  fi
+
   # Try to extract a target path so we can apply the same path-based
   # exemptions (.claude/, docs/, *.md). If extraction fails, FILE_PATH
   # stays empty and the gate is applied categorically.
   FILE_PATH=$(bash_extract_write_target "$COMMAND")
+
+  # Variable target (e.g. `cat > "$VAR"`): the extractor returns the literal
+  # shell-variable token. Exempt a temp-dir var, and a BARE whole-target variable
+  # (`$CEO`, `${marker}` — unresolvable, in practice a .claude/ scratch path). A
+  # variable WITH a concatenated path tail (`$PWD/src/app.ts`, `$D/app.ts`,
+  # `$HOME/work/src/x.ts`) is NOT exempt — that path could be tracked source, and
+  # the old blanket `$*` exemption let such a write dodge the ticket gate (#582
+  # review: fail-open on a security gate). A var+tail target isn't bare and isn't
+  # absolute, so it falls through to the ticket gate below and blocks — which is
+  # the safe direction. (We deliberately do NOT expand $PWD/$HOME here: that adds
+  # nothing for blocking and tripped a /var↔/private/var symlink mismatch.)
+  case "$FILE_PATH" in
+    '$TMPDIR'/*|'${TMPDIR}'/*|'$TMP'/*|'${TMP}'/*) exit 0 ;;  # temp dir → outside the repo
+  esac
+  # Bare whole-target variable only (no path/extension tail) → exempt.
+  if printf '%s' "$FILE_PATH" | grep -qE '^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$'; then
+    exit 0
+  fi
 fi
 
 if [ -z "$FILE_PATH" ] && [ "$TOOL_NAME" != "Bash" ]; then
   exit 0
 fi
 
-# Normalise to repo-relative path when possible
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+# Normalise to repo-relative path when possible.
+#
+# BUG #744 FIX: derive REPO_ROOT from the FILE_PATH's directory, NOT the
+# hook's CWD. The harness can fire with any CWD (e.g. /tmp, the ops root,
+# a totally unrelated directory). Using `git rev-parse --show-toplevel`
+# from the hook process's CWD returns the WRONG root whenever the CWD
+# differs from the file's actual git repo — which breaks the OPS_ROOT
+# walk-up and causes the per-project marker to be missed, blocking edits
+# even when /start-ticket set a valid marker (#744, #745).
+#
+# Resolution order:
+#   1. FILE_PATH is set and absolute: run git in the file's nearest existing
+#      ancestor directory.  Works for new files (dirname of a not-yet-created
+#      path still points at the parent dir).
+#   2. FILE_PATH is set but relative (Bash write-target extracted from the
+#      command): relative paths are relative to the process CWD, so fall
+#      back to the legacy CWD-based git rev-parse — same behaviour as before.
+#   3. FILE_PATH is empty (Bash command, no extractable target): CWD-based
+#      fallback as before.
+REPO_ROOT=""
+if [ -n "$FILE_PATH" ]; then
+  case "$FILE_PATH" in
+    /*)
+      # Absolute path — find the nearest existing ancestor directory.
+      # dirname works on non-existent files; the while loop handles the
+      # case where the new file's parent dir doesn't exist yet.
+      _fp_dir="$(dirname "$FILE_PATH")"
+      while [ -n "$_fp_dir" ] && [ "$_fp_dir" != "/" ] && [ ! -d "$_fp_dir" ]; do
+        _fp_dir="$(dirname "$_fp_dir")"
+      done
+      if [ -d "$_fp_dir" ]; then
+        REPO_ROOT=$(git -C "$_fp_dir" rev-parse --show-toplevel 2>/dev/null)
+        # When the file's repo is a LINKED git worktree the worktree dir
+        # inherits the main branch's files — including anchor files like
+        # onboarding.yaml / apexyard.projects.yaml.  The OPS_ROOT walk-up
+        # below would then stop at the worktree instead of the real ops
+        # fork.  Detect a linked worktree (absolute git-dir ≠ common-dir)
+        # and replace REPO_ROOT with the main-checkout root (dirname of
+        # the common-dir, i.e. parent of the main .git dir).  This keeps
+        # the walk-up anchored to the actual ops fork while leaving the
+        # later per-worktree branch detection (which re-reads git from
+        # _fdir) unaffected.
+        if [ -n "$REPO_ROOT" ]; then
+          _wt_gd=$(git -C "$_fp_dir" rev-parse --absolute-git-dir 2>/dev/null)
+          _wt_gcd=$(git -C "$_fp_dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+          if [ -n "$_wt_gd" ] && [ -n "$_wt_gcd" ] && [ "$_wt_gd" != "$_wt_gcd" ]; then
+            _main_root=$(dirname "$_wt_gcd")
+            [ -d "$_main_root" ] && REPO_ROOT="$_main_root"
+          fi
+        fi
+      fi
+      ;;
+    *)
+      # Relative path (Bash write-target): resolve against CWD.
+      REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+      ;;
+  esac
+fi
+# Fallback: FILE_PATH empty (Bash command, no extractable target).
+if [ -z "$REPO_ROOT" ]; then
+  REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+fi
 REL_PATH="$FILE_PATH"
 if [ -n "$REPO_ROOT" ] && [ -n "$FILE_PATH" ]; then
   case "$FILE_PATH" in
     "$REPO_ROOT"/*) REL_PATH="${FILE_PATH#$REPO_ROOT/}" ;;
+  esac
+fi
+
+# Bash-write: absolute paths outside the repo root are outside the tracked
+# source tree (e.g. /tmp/, /var/, /usr/, system-temp paths). A write there
+# cannot mutate apexyard-governed content, so no ticket is required (#569).
+# This check runs only for the Bash path (FILE_PATH set via extractor) and
+# only when FILE_PATH is absolute and does NOT strip to a REL_PATH (meaning
+# it's outside REPO_ROOT). We conservatively skip this for non-Bash tools —
+# they supply an explicit file_path from the tool call that we trust fully.
+if [ "$TOOL_NAME" = "Bash" ] && [ -n "$FILE_PATH" ] && [ -n "$REPO_ROOT" ]; then
+  case "$FILE_PATH" in
+    /*)
+      # Absolute path — was it stripped to a repo-relative form?
+      if [ "$REL_PATH" = "$FILE_PATH" ]; then
+        # REL_PATH is still absolute: FILE_PATH is NOT under REPO_ROOT.
+        # It's a system path or temp path — exempt.
+        exit 0
+      fi
+      ;;
   esac
 fi
 
@@ -115,27 +224,36 @@ fi
 # v1 anchor (onboarding.yaml + apexyard.projects.yaml). Stop at /. If
 # not found, OPS_ROOT stays empty and we treat the REPO_ROOT itself as
 # the marker home (pre-#41 behaviour).
+#
+# Guard change (#744/#745): the lib-based resolver is always invoked when
+# the lib is available — even when REPO_ROOT is empty. This matters for
+# split-portfolio v2 where the workspace is a sibling repo with no git
+# history: REPO_ROOT is empty (no git in the sibling dir) but the
+# session-pin resolver in _lib-ops-root.sh can still locate the ops fork
+# from the pin written at session-start, regardless of start dir.
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 OPS_ROOT=""
-if [ -n "$REPO_ROOT" ]; then
-  if [ -f "$HOOK_DIR/_lib-ops-root.sh" ]; then
-    # shellcheck source=/dev/null
-    . "$HOOK_DIR/_lib-ops-root.sh"
-    OPS_ROOT=$(resolve_ops_root "$REPO_ROOT")
-  else
-    r="$REPO_ROOT"
-    while [ -n "$r" ] && [ "$r" != "/" ]; do
-      if [ -f "$r/.apexyard-fork" ]; then
-        OPS_ROOT="$r"
-        break
-      fi
-      if [ -f "$r/onboarding.yaml" ] && [ -f "$r/apexyard.projects.yaml" ]; then
-        OPS_ROOT="$r"
-        break
-      fi
-      r=$(dirname "$r")
-    done
-  fi
+if [ -f "$HOOK_DIR/_lib-ops-root.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$HOOK_DIR/_lib-ops-root.sh"
+  # Pass REPO_ROOT as the walk-up start dir when available; the pin
+  # resolver ignores the start dir and uses the session pin directly.
+  OPS_ROOT=$(resolve_ops_root "${REPO_ROOT:-}")
+elif [ -n "$REPO_ROOT" ]; then
+  # Inline walk-up fallback when the lib is absent (e.g. minimal test
+  # sandboxes that only copy the core libs).
+  r="$REPO_ROOT"
+  while [ -n "$r" ] && [ "$r" != "/" ]; do
+    if [ -f "$r/.apexyard-fork" ]; then
+      OPS_ROOT="$r"
+      break
+    fi
+    if [ -f "$r/onboarding.yaml" ] && [ -f "$r/apexyard.projects.yaml" ]; then
+      OPS_ROOT="$r"
+      break
+    fi
+    parent=$(dirname "$r"); [ "$parent" = "$r" ] && break; r="$parent"
+  done
 fi
 
 MARKER_HOME="${OPS_ROOT:-$REPO_ROOT}"
@@ -215,6 +333,42 @@ if [ -z "$PROJECT" ] && [ -n "$OPS_ROOT" ]; then
   esac
 fi
 
+# Tier 0 — per-worktree marker (#513): when two agents are fanned out on the
+# SAME managed project in parallel git worktrees, each must declare its ticket
+# independently or they collide on the shared per-project file (last-writer-wins,
+# silent wrong-ticket pass). A branch-scoped marker at
+# tickets/<project>/<safe-branch> is resolved BEFORE the per-project tier.
+# Single-agent / non-worktree flows have no such marker and fall straight
+# through to the per-project tier — no behaviour change. Note: tickets/<project>
+# is a FILE in single-agent mode and a DIRECTORY in worktree mode; the `-f`
+# tests below distinguish them, so the two tiers never conflict.
+PER_WORKTREE_MARKER=""
+if [ -n "$PROJECT" ]; then
+  # Branch: prefer the harness-set env var (populated at worktree spawn). Else
+  # only treat the file's repo as worktree-scoped when it's a LINKED worktree,
+  # detected by comparing the ABSOLUTE git-dir against the ABSOLUTE common-dir
+  # (they differ only in a linked worktree). This matches /start-ticket's
+  # write-side detection exactly — no read/write asymmetry — and the absolute
+  # forms avoid the false positive where, in the main checkout from a subdir,
+  # `--git-dir` is absolute but `--git-common-dir` is relative.
+  WT_BRANCH="${CLAUDE_WORKTREE_BRANCH:-}"
+  if [ -z "$WT_BRANCH" ]; then
+    _fdir=$(dirname "$FILE_PATH")
+    _gd=$(git -C "$_fdir" rev-parse --absolute-git-dir 2>/dev/null)
+    _gcd=$(git -C "$_fdir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+    if [ -n "$_gd" ] && [ "$_gd" != "$_gcd" ]; then
+      WT_BRANCH=$(git -C "$_fdir" branch --show-current 2>/dev/null)
+    fi
+  fi
+  if [ -n "$WT_BRANCH" ]; then
+    SAFE_BRANCH="${WT_BRANCH//\//__}"   # '/' → '__' for a filesystem-safe segment
+    PER_WORKTREE_MARKER="$MARKER_HOME/.claude/session/tickets/$PROJECT/$SAFE_BRANCH"
+    if [ -f "$PER_WORKTREE_MARKER" ]; then
+      exit 0
+    fi
+  fi
+fi
+
 PER_PROJECT_MARKER=""
 if [ -n "$PROJECT" ]; then
   PER_PROJECT_MARKER="$MARKER_HOME/.claude/session/tickets/$PROJECT"
@@ -249,6 +403,7 @@ To unblock:
   3. Retry the edit
 
 Markers looked up for this path (in order):
+$([ -n "$PER_WORKTREE_MARKER" ] && echo "  per-worktree: $PER_WORKTREE_MARKER")
 $([ -n "$PER_PROJECT_MARKER" ] && echo "  per-project:  $PER_PROJECT_MARKER")
   ops fallback: $FALLBACK_MARKER
 

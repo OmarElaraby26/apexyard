@@ -26,17 +26,59 @@ fi
 #
 # Falls back to local HEAD when the push has no source ref (no-arg push,
 # `git push origin` with no ref, etc.) — preserves today's behaviour for
-# anyone not passing the ref explicitly. See me2resh/apexyard#194.
+# anyone not passing the ref explicitly. See me2resh/apexyard#194, #547.
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 PUSH_REF=""
 if [ -f "$HOOK_DIR/_lib-extract-push-ref.sh" ]; then
   # shellcheck disable=SC1090,SC1091
   . "$HOOK_DIR/_lib-extract-push-ref.sh"
+
+  # Tag pushes (--tags, `tag <name>`, refs/tags/) have no branch to validate.
+  # Exit cleanly — a branch-name validator has nothing to check here.
+  # This guard runs before extract_push_ref so shell redirections appended
+  # to a tag-push command (e.g. `git push --tags 2>&1 | tail`) don't cause
+  # is_tag_push() to miss the --tags flag. See me2resh/apexyard#547.
+  if is_tag_push "$COMMAND"; then
+    exit 0
+  fi
+
   PUSH_REF=$(extract_push_ref "$COMMAND")
+fi
+
+# When the push has no explicit source ref (no-arg `git push`, `git push
+# origin` relying on upstream tracking), we fall back to the current branch.
+# That fallback MUST be resolved against the repo the command actually runs
+# in — not the hook's own cwd. The harness fires this PreToolUse hook BEFORE
+# the shell executes the command, so a `cd <repo> && git push …` prefix has
+# NOT yet changed the working dir: the hook's cwd is still the ops fork (on,
+# e.g., `dev`). Without re-rooting, the fallback reads the ops-fork's branch
+# and false-blocks a push for a *different* managed repo (e.g. "Branch 'dev'
+# missing ticket ID"). Same class as #669/#687 for the merge gates + arch-PR
+# hook. See me2resh/apexyard#693.
+#
+# Re-root via pr_cmd_cd_target from _lib-pr-repo.sh: if the command begins
+# with `cd <path> && …`, resolve the fallback branch with `git -C <path>`.
+# When there's no leading `cd` (or <path> isn't a git tree), this is a no-op
+# and the fallback stays byte-for-byte equivalent to the pre-#693 behaviour.
+BRANCH_DIR=""
+if [ -f "$HOOK_DIR/_lib-pr-repo.sh" ]; then
+  # shellcheck disable=SC1090,SC1091
+  . "$HOOK_DIR/_lib-pr-repo.sh"
+  CD_TARGET=$(pr_cmd_cd_target "$COMMAND")
+  if [ -n "$CD_TARGET" ]; then
+    CD_TOPLEVEL=$(git -C "$CD_TARGET" rev-parse --show-toplevel 2>/dev/null)
+    if [ -n "$CD_TOPLEVEL" ]; then
+      BRANCH_DIR="$CD_TOPLEVEL"
+    fi
+    # If <path> is not a readable git tree, fall through with BRANCH_DIR empty
+    # — the fallback uses the hook's own cwd, no worse than pre-#693.
+  fi
 fi
 
 if [ -n "$PUSH_REF" ]; then
   CURRENT_BRANCH="$PUSH_REF"
+elif [ -n "$BRANCH_DIR" ]; then
+  CURRENT_BRANCH=$(git -C "$BRANCH_DIR" branch --show-current 2>/dev/null)
 else
   CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
 fi
@@ -58,6 +100,15 @@ if echo "$CURRENT_BRANCH" | grep -qE '^release/v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+
   exit 0
 fi
 
+# Allow main→dev sync branches (apexyard#458, AgDR-0052). The /release-sync
+# skill prescribes `sync/main-to-dev-after-vN.N.N` as the canonical name for
+# the post-release main→dev sync PR's source branch. Like release branches,
+# these don't carry a ticket-id — the release being synced is the ticket. Same
+# narrow, intentional exception to the {type}/{TICKET}-{desc} shape.
+if echo "$CURRENT_BRANCH" | grep -qE '^sync/main-to-dev-after-v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$'; then
+  exit 0
+fi
+
 # Load the branch-type whitelist from project config.
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 # shellcheck source=./_lib-read-config.sh
@@ -68,7 +119,7 @@ if [ -n "$REPO_ROOT" ] && [ -f "$REPO_ROOT/.claude/hooks/_lib-read-config.sh" ];
 fi
 # Fallback if config unavailable (jq missing, standalone install, etc.)
 if [ -z "$TYPES" ]; then
-  TYPES="feature|fix|refactor|chore|docs|test|spike|ci|build|perf"
+  TYPES="feature|fix|refactor|chore|docs|test|spike|ci|build|perf|sync"
 fi
 
 # Load the ticket-ID regex from the tracker lib. The pattern is shape-only

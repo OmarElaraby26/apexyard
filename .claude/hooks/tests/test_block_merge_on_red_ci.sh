@@ -1,15 +1,13 @@
 #!/bin/bash
-# Tests for block-merge-on-red-ci.sh — exercises the .ci.require_to_exist
-# config flag added under #5 (OmarElaraby26/apexyard) for free-tier
-# private repos that need strict missing-CI = blocked behaviour.
+# Tests for block-merge-on-red-ci.sh.
 #
 # Cases:
-#   1. no checks + flag absent       → exit 0 (legacy NOTE pass)
-#   2. no checks + flag false        → exit 0 (explicit-default pass)
-#   3. no checks + flag true         → exit 2 (strict block)
-#   4. all-green + flag true         → exit 0 (green still passes)
-#   5. red CI + flag true            → exit 2 (red still blocks regardless of flag)
-#   6. red CI + flag absent          → exit 2 (legacy red-block path)
+#   1. no checks                     → exit 0 (NOTE: no CI configured)
+#   2. no checks (dead config key)   → exit 0 (require_to_exist removed upstream v4.0.0)
+#   3. no checks (legacy)            → exit 0 (flag always ignored now)
+#   4. all-green                     → exit 0 (green passes)
+#   5. red CI                        → exit 2 (red blocks)
+#   6. red CI (no flag)              → exit 2 (legacy red-block path)
 #
 # Exit 0 if all cases pass; 1 on first failure.
 
@@ -117,24 +115,21 @@ write_override "$sb" "false"
 run_case "no-checks-flag-false" "$sb" 0 "no CI checks configured"
 rm -rf "$sb"
 
-# --- Case 3: no checks + flag true → exit 2 ---
+# --- Case 3: no checks (require_to_exist flag removed upstream v4.0.0) → exit 0 ---
 sb=$(make_sandbox)
 install_gh_mock "$sb" "no checks reported on the 'feature/x' branch" 0
-write_override "$sb" "true"
-run_case "no-checks-flag-true" "$sb" 2 "no CI checks reported"
+run_case "no-checks-flag-true" "$sb" 0 "no CI checks configured"
 rm -rf "$sb"
 
-# --- Case 4: all-green + flag true → exit 0 ---
+# --- Case 4: all-green → exit 0 ---
 sb=$(make_sandbox)
 install_gh_mock "$sb" "ok  build  Lint" 0
-write_override "$sb" "true"
 run_case "green-flag-true" "$sb" 0 ""
 rm -rf "$sb"
 
-# --- Case 5: red CI + flag true → exit 2 ---
+# --- Case 5: red CI → exit 2 ---
 sb=$(make_sandbox)
 install_gh_mock "$sb" "fail  build  Lint" 1
-write_override "$sb" "true"
 run_case "red-flag-true" "$sb" 2 "red CI"
 rm -rf "$sb"
 
@@ -149,11 +144,11 @@ rm -rf "$sb"
 # ship `_lib-read-config.sh`; the ops fork has no `.ci.require_to_exist`
 # override. The workspace's `.claude/project-config.json` has the flag set
 # to true. Pre-fix: hook's `[ -f "$REPO_ROOT/.claude/hooks/_lib-read-config.sh" ]`
-# checks the workspace's git toplevel, fails, config read SKIPPED, default
-# false used → "no checks" passes with NOTE (BUG). Post-fix: hook self-loads
-# the lib via `dirname $0`; lib detects CWD inside a registered workspace
-# and layers the workspace's project-config.json over ops-fork override
-# over defaults → flag resolves to true → "no checks" BLOCKS.
+# correctly. Since require_to_exist flag was removed upstream v4.0.0,
+# no-CI from a registered workspace now exits 0 (same as any other repo).
+
+
+
 make_workspace_sandbox() {
   local sb ops_fork ws_name workspace
   sb=$(mktemp -d)
@@ -215,11 +210,11 @@ stderr_out=$(cd "$sb/ops-fork/workspace/testproj" && PATH="$sb/ops-fork/bin:$PAT
   APEXYARD_OPS_DISABLE_PIN=1 \
   bash "$sb/ops-fork/.claude/hooks/block-merge-on-red-ci.sh" <<<"$input" 2>&1 >/dev/null)
 exit_code=$?
-if [ "$exit_code" = 2 ] && echo "$stderr_out" | grep -qE "no CI checks reported"; then
+if [ "$exit_code" = 0 ] && echo "$stderr_out" | grep -qE "no CI checks configured"; then
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
-  FAILED_CASES="${FAILED_CASES}\n  - workspace-flag-true: want exit 2 + 'no CI checks reported', got exit ${exit_code}\n    stderr: ${stderr_out}"
+  FAILED_CASES="${FAILED_CASES}\n  - workspace-flag-true: want exit 0 + 'no CI checks configured', got exit ${exit_code}\n    stderr: ${stderr_out}"
 fi
 rm -rf "$sb"
 
