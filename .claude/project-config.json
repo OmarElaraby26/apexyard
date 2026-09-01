@@ -17,5 +17,17 @@
         "run": "bash .claude/hooks/tests/test_subpack_extraction.sh 2>&1"
       }
     ]
+  },
+
+  "portfolio": {
+    "_comment": "Split-portfolio v2: every adopter-specific artefact lives in the private sibling repo ../apexyard-xadvisor. Paths are relative to the ops-fork root (this dir, anchored by .apexyard-fork). See docs/multi-project.md.",
+    "registry": "../apexyard-xadvisor/apexyard.projects.yaml",
+    "projects_dir": "../apexyard-xadvisor/projects",
+    "ideas_backlog": "../apexyard-xadvisor/projects/ideas-backlog.md",
+    "onboarding": "../apexyard-xadvisor/onboarding.yaml",
+    "workspace_dir": "./workspace",
+    "agent_routing": "../apexyard-xadvisor/agent-routing.yaml",
+    "custom_skills_dir": "../apexyard-xadvisor/custom-skills",
+    "custom_handbooks_dir": "../apexyard-xadvisor/custom-handbooks"
   }
 }
