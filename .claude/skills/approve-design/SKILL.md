@@ -6,13 +6,11 @@ argument-hint: "<pr-number>"
 effort: low
 ---
 
-## Writing rule
-
-When this skill writes a durable artifact, read .claude/rules/writing-standard.md. Use the controlled technical writing profile.
+Writing: read docs/skills/shared/writing-rule.md before you write a durable artifact.
 
 # /approve-design - Record Per-PR Design-Review Approval
 
-Writes `.claude/session/reviews/<owner>__<repo>__<pr>-design.approved` (repo-qualified path, see AgDR-0060) with the current HEAD SHA so the `require-design-review-for-ui.sh` merge-gate hook will let a UI PR through. Without this marker, the hook blocks merges on any PR that touches `.tsx`, `.jsx`, `.vue`, `.svelte`, `.css`, `.scss`, `.sass`, `.less`, or `design-tokens*` files.
+Writes `.claude/session/reviews/<owner>__<repo>__<pr>-design.approved` (repo-qualified path, see AgDR-0060) with the current HEAD SHA so the `require-design-review-for-ui.sh` merge-gate hook will let a UI PR through. Without this marker, the hook blocks merges on any PR that touches a UI file — the pattern list lives in `.claude/hooks/_lib-ui-paths.sh` (React/Vue/Svelte/Astro/MDX components, template-engine files, styles, and design tokens), shared with step 5 below so the two checks never diverge (me2resh/apexyard#1390).
 
 This skill is the design-review analog of `/approve-merge` (which writes the CEO marker for the merge gate). Same pattern, different gate.
 
@@ -34,6 +32,33 @@ The valid invocation triggers look like this:
 - Your own inference that "the designer probably approves because they liked the mockup earlier." NO. Mockup approval ≠ implementation approval. Stop and ask.
 
 **If in doubt: STOP AND ASK.** "PR #X has UI changes — has the design been reviewed and approved?" is one message. Merging a PR with incorrect UI that needs a follow-up revert is much worse.
+
+## Menu path
+
+The typed command stays. The operator can also approve the design review from a menu.
+
+Show one `AskUserQuestion` menu. The question text must be exact.
+
+`Approve design review for <owner>/<repo>#<N> at <40-hex-sha>?`
+
+Use the PR base repo, the PR number, and the full head SHA from the forge. The SHA is 40 lowercase hex digits.
+
+Offer these options and no others.
+
+- `Approve design review`
+- `Not yet`
+
+Do not add a suffix to either label. The hook matches the label exactly.
+
+`record-menu-approval.sh` reads the harness payload. It writes the menu record when the selected option is `Approve design review`. Do not write the marker yourself.
+
+`Not yet` writes nothing.
+
+An umbrella "go" does not count. A prose answer does not count. Any answer outside this menu does not count.
+
+The typed command still writes a bare SHA. The menu record uses `skill_version=3` and `approval_channel=menu`. The gate accepts both. It still requires the recorded SHA to match the PR head.
+
+See AgDR-0234.
 
 ## Process
 
@@ -73,13 +98,8 @@ Design review is a stamp on top of a Rex-approved HEAD, not parallel to code rev
 
 ```bash
 REPO_ROOT=$(git rev-parse --show-toplevel)
-OPS_ROOT=""
-r="$REPO_ROOT"
-while [ -n "$r" ] && [ "$r" != "/" ]; do
-  if [ -f "$r/.apexyard-fork" ]; then OPS_ROOT="$r"; break; fi
-  if [ -f "$r/onboarding.yaml" ] && [ -f "$r/apexyard.projects.yaml" ]; then OPS_ROOT="$r"; break; fi
-  r=$(dirname "$r")
-done
+# Ops root: pin first, then walk up (docs/skills/shared/ops-root.md).
+OPS_ROOT=$(p="${APEXYARD_OPS_PIN_DIR:-$HOME/.claude/apexyard}/ops-root-${CLAUDE_CODE_SESSION_ID:-}"; r=""; [ -z "${APEXYARD_OPS_DISABLE_PIN:-}" ] && [ -f "$p" ] && IFS= read -r r < "$p"; [ -f "$r/.claude/hooks/_lib-ops-root.sh" ] || { r="$PWD"; while [ -n "$r" ] && [ ! -f "$r/.claude/hooks/_lib-ops-root.sh" ]; do r=${r%/*}; done; }; [ -f "$r/.claude/hooks/_lib-ops-root.sh" ] && . "$r/.claude/hooks/_lib-ops-root.sh" && resolve_ops_root) || OPS_ROOT=""
 MARKER_HOME="${OPS_ROOT:-$REPO_ROOT}"
 # shellcheck source=/dev/null
 . "$MARKER_HOME/.claude/hooks/_lib-review-markers.sh"
@@ -112,8 +132,19 @@ If Rex's marker is missing or its SHA doesn't match HEAD, refuse and tell the us
 
 Check whether the PR's diff includes files that would trigger the design-review gate. If the PR has NO UI files, the marker is unnecessary — tell the user and skip.
 
+Read the pattern list from `_lib-ui-paths.sh` — the same source `require-design-review-for-ui.sh` reads — instead of a separate hard-coded copy. The two lists drifted apart before this (me2resh/apexyard#1390); sourcing the shared library keeps them in sync going forward:
+
 ```bash
-gh pr diff <pr> --name-only | grep -qE '\.(tsx|jsx|vue|svelte|css|scss|sass|less)$|design-tokens'
+# MARKER_HOME and REPO_ROOT already resolved in step 4. Source the library
+# from MARKER_HOME (the hook scripts live in the ops fork), but pass
+# REPO_ROOT — the PR's own git root — to look up `.ui_paths`. That is the
+# same root require-design-review-for-ui.sh reads. Passing MARKER_HOME here
+# instead reads the wrong project-config.json inside a workspace/ clone,
+# so a project-level `.ui_paths` override could make this check and the
+# gate disagree (me2resh/apexyard#1397).
+. "$MARKER_HOME/.claude/hooks/_lib-ui-paths.sh"
+UI_GLOB_PATTERN=$(ui_effective_globs_pipe "$REPO_ROOT")
+gh pr diff <pr> --name-only | grep -qE "$UI_GLOB_PATTERN"
 ```
 
 ### 6. Write the design marker

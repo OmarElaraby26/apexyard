@@ -9,11 +9,10 @@
 # bin/conformance-assert-block-message.sh, which derives its assertion
 # from the hook's own live output rather than a hardcoded copy of it.
 #
-# Cursor is deliberately NOT in this matrix. Its `cursor-agent` CLI
-# ignores hooks.json entirely (confirmed live, docs/harnesses/cursor.md),
-# so there is no headless path that would exercise the delegated gate —
-# only the GUI-only IDE, which fails closed rather than proving the gate
-# ran. Cursor stays documented-manual; see docs/conformance-ci.md.
+# Cursor is deliberately NOT in this matrix. Native IDE exec of
+# `.claude/hooks/*.sh` was observed on 2026-09-16, but `cursor-agent`
+# still ignores hooks.json (docs/harnesses/cursor.md). There is no
+# headless path that would exercise the delegated gate in CI.
 #
 # FAIL-CLOSED, NOT SKIP-GREEN: a harness job with no credential secret
 # provisioned FAILS loudly (::error::) rather than being skipped quietly.
@@ -34,6 +33,7 @@
 name: Conformance CI
 
 on:
+  workflow_call:
   schedule:
     # Daily, not per-PR: pi and Codex bill a real per-turn API cost and
     # per-PR frequency would multiply that cost with the number of PRs
@@ -78,7 +78,7 @@ jobs:
 
       - name: Set up Node
         if: env.SELECTED != 'false'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v5.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v5.0.0
         with:
           node-version: "22"
 
@@ -252,7 +252,7 @@ jobs:
 
       - name: Upload turn transcript
         if: env.SELECTED != 'false' && always() && steps.creds.outputs.ready == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: conformance-turn-${{ matrix.harness }}-${{ github.run_id }}
           path: ${{ steps.scratch.outputs.dir }}/turn.log

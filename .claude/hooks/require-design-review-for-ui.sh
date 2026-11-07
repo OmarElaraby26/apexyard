@@ -21,8 +21,15 @@
 #   - *.tsx, *.jsx (React)
 #   - *.vue (Vue)
 #   - *.svelte (Svelte)
+#   - *.astro (Astro)
+#   - *.mdx (MDX — Markdown with embedded components)
+#   - *.hbs, *.njk, *.liquid (Handlebars / Nunjucks / Liquid templates)
 #   - *.css, *.scss, *.sass, *.less (styles)
 #   - design-tokens.* (design systems)
+#
+# The full default pattern list lives in _lib-ui-paths.sh — the single
+# source shared with the /approve-design skill's own UI-touch check (step 5),
+# so the two lists cannot drift apart (me2resh/apexyard#1390).
 #
 # Projects that want a broader/narrower list can override via
 # .claude/project-config.json:
@@ -54,17 +61,76 @@
 
 INPUT=$(cat)
 
+# _require_lib <path>: source a REQUIRED library or fail closed.
+#
+# Without this guard, a missing/unreadable library leaves is_merge_command
+# (and the other functions the library defines) undefined. In default
+# (non-POSIX) bash, sourcing a missing file with a bare `.` returns 1 and
+# the script keeps running — the later `if ! is_merge_command "$COMMAND";
+# then exit 0; fi` check then calls an undefined function, bash reports
+# "command not found" (exit 127), the negated check reads that as "not a
+# merge command", and the hook exits 0. That exit is a clean, deliberate-
+# looking 0, not a crash, so the dispatcher's fail-closed wrapper
+# (AgDR-0169) cannot see it — this gate silently opens. See
+# me2resh/apexyard#1405 review finding H2 and AgDR-0169.
+#
+# Checking readability with `[ -r ]` BEFORE ever calling `.` also matters
+# under `bash --posix` / `POSIXLY_CORRECT=1`: a special builtin such as `.`
+# that fails to find its argument ends a non-interactive POSIX-mode shell
+# immediately, even inside an `if`/`||` guard around the `.` call itself —
+# verified empirically (see AgDR-0169). `[ -r ]` is an ordinary test
+# builtin, so it never triggers that behavior; this function never calls
+# `.` on a path it has not already confirmed is readable.
+_require_lib() {
+  local lib="$1" fn
+  shift
+  if [ ! -r "$lib" ]; then
+    echo "BLOCKED: merge gate cannot load a required library." >&2
+    echo "Missing or unreadable: $lib" >&2
+    echo "A merge gate that cannot load its own logic fails closed" >&2
+    echo "instead of skipping the check. Restore the file and retry." >&2
+    exit 2
+  fi
+  # shellcheck disable=SC1090,SC1091
+  if ! . "$lib"; then
+    echo "BLOCKED: merge gate failed to load a required library." >&2
+    echo "Source failed: $lib" >&2
+    echo "A merge gate that cannot load its own logic fails closed" >&2
+    echo "instead of skipping the check. Fix the file and retry." >&2
+    exit 2
+  fi
+  for fn in "$@"; do
+    if ! command -v "$fn" >/dev/null 2>&1 || ! declare -F "$fn" >/dev/null 2>&1; then
+      printf 'BLOCKED: merge gate missing required function %s after sourcing %s. Restore the library and retry.\n' "$fn" "$lib" >&2
+      exit 2
+    fi
+  done
+}
+
 # Shared merge-shape detector + PR-number parser (see _lib-extract-pr.sh).
 # Handles `gh pr merge <N>` and `gh api repos/<owner>/<repo>/pulls/<N>/merge`.
 # Sourced BEFORE the jq-based command parse below (moved up from its
 # original position after the parse) so is_merge_command is available as
 # the jq-independent fallback detector when the parse can't be trusted —
 # see #965.
-. "$(dirname "$0")/_lib-extract-pr.sh"
+_require_lib "$(dirname "$0")/_lib-extract-pr.sh" \
+  is_merge_command is_merge_command_raw \
+  _run_awk_or_fallback join_shell_continuations _join_shell_continuations_fallback \
+  _scrub_merge_command _has_split_merge_phrase _normalize_json_escapes \
+  has_conflicting_repo_flags merge_command_uses_variable extract_pr_number resolve_merge_repo resolve_pr_head \
+  prmeta_get prmeta_file_list
 # Repo-qualified marker path helper (#485).
-. "$(dirname "$0")/_lib-review-markers.sh"
+_require_lib "$(dirname "$0")/_lib-review-markers.sh" \
+  review_marker_path unqualified_marker_hint
 # cd-target → origin recovery for the no---repo split-portfolio merge (#687).
-. "$(dirname "$0")/_lib-pr-repo.sh"
+# Required here (unlike its optional `if [ -f ]` treatment in
+# block-unreviewed-merge.sh / block-merge-on-red-ci.sh) — this hook has
+# always sourced it unconditionally, so _require_lib preserves that
+# "required" semantic while making a missing file fail closed instead of
+# either silently continuing (default bash) or fatally exiting the whole
+# script before this hook's own BLOCKED logic can run (POSIX mode). See
+# me2resh/apexyard#1405 review (Hakim's second matrix) and AgDR-0169.
+_require_lib "$(dirname "$0")/_lib-pr-repo.sh" pr_cmd_cd_target git_origin_repo
 
 # Parse .tool_input.command via jq. #965: this used to be the ONLY parse
 # path, and an empty/failed result — jq missing from PATH, or jq erroring
@@ -111,18 +177,30 @@ if [ -z "$COMMAND" ]; then
   # hook sees. A payload that DOES look merge-shaped but that we can't
   # safely parse/verify fails CLOSED (exit 2) instead of silently letting
   # an unreviewed UI change through.
-  if is_merge_command "$(_normalize_json_escapes "$INPUT")"; then
+  if is_merge_command_raw "$(_normalize_json_escapes "$INPUT")"; then
     echo "BLOCKED: design-review gate cannot evaluate this command — jq is unavailable or .tool_input.command could not be parsed, but the raw input looks merge-related. Refusing to merge until this can be verified. Restore jq (see .claude/hooks/check-jq-installed.sh) and retry." >&2
     exit 2
   fi
   exit 0
 fi
 
+_has_split_merge_phrase "$COMMAND"
+scan_status=$?
+if [ "$scan_status" -eq 2 ]; then
+  echo "BLOCKED: merge gate could not scan the command. Check awk and the command size." >&2
+  exit 2
+fi
+
 if ! is_merge_command "$COMMAND"; then
   exit 0
 fi
 
-if merge_command_uses_variable "$COMMAND"; then
+if has_conflicting_repo_flags "$COMMAND"; then
+  echo "BLOCKED: merge command has conflicting repo flags. Re-run with one repo value." >&2
+  exit 2
+fi
+
+if merge_command_uses_variable "$COMMAND" "$scan_status"; then
   echo "BLOCKED: design-review gate cannot resolve a merge command containing an unexpanded PR or repo variable. Re-run with literal values." >&2
   exit 2
 fi
@@ -148,40 +226,57 @@ if [ -f "$HOOK_DIR/_lib-ops-root.sh" ]; then
 fi
 MARKER_HOME="${OPS_ROOT:-${REPO_ROOT:-.}}"
 
-# Default UI path patterns (regex). Note: .tsx$ / .jsx$ are EXACT — they must
-# not match plain .ts / .js, which are often backend/server files. The
-# original draft had \.tsx?$ which matched .ts too; caught in smoke test.
-UI_GLOBS='\.tsx$
-\.jsx$
-\.vue$
-\.svelte$
-\.css$
-\.scss$
-\.sass$
-\.less$
-design-tokens'
-
-# Allow project-config to override
-if [ -n "$REPO_ROOT" ] && [ -f "${REPO_ROOT}/.claude/project-config.json" ]; then
-  CUSTOM=$(jq -r '.ui_paths // [] | join("|")' "${REPO_ROOT}/.claude/project-config.json" 2>/dev/null)
-  if [ -n "$CUSTOM" ] && [ "$CUSTOM" != "null" ]; then
-    UI_GLOBS="$CUSTOM"
-  fi
+# Default + effective UI path patterns (regex) — sourced from _lib-ui-paths.sh,
+# the single list shared with /approve-design's step 5 (me2resh/apexyard#1390).
+# Fail closed if the library cannot be sourced or resolves to an empty list.
+# Without this guard a missing, unreadable, empty, or broken library left
+# UI_GLOBS empty and the pattern loop below matched no file, so the gate
+# exited 0 on every PR — the opposite of this hook's CONTROL / fail-closed
+# contract (AgDR-0104 decision 1). me2resh/apexyard#1397 HIGH-1.
+#
+# The `[ ! -r ]` readability check runs FIRST in this `||` chain, and `||`
+# short-circuits — so a missing file never reaches the `.` call at all.
+# That matters under `bash --posix` / `POSIXLY_CORRECT=1`: a special
+# builtin such as `.` that fails to find its argument ends a non-
+# interactive POSIX-mode shell immediately, even from inside this exact
+# `if ! . ... || ...` condition — verified empirically (see AgDR-0169 and
+# me2resh/apexyard#1405's second review round). Before this fix, the
+# BLOCKED branch below was unreachable in POSIX mode: the fatal exit
+# happened mid-evaluation of the `if`'s test list, before bash ever got to
+# decide the branch. `[ ! -r ]` is an ordinary test builtin, so it never
+# triggers that fatal case, and the BLOCKED message now prints in both
+# default and POSIX-mode bash.
+if [ ! -r "$HOOK_DIR/_lib-ui-paths.sh" ] || ! . "$HOOK_DIR/_lib-ui-paths.sh" 2>/dev/null || ! command -v ui_effective_globs >/dev/null 2>&1; then
+  echo "BLOCKED: design-review gate could not load its UI pattern list (_lib-ui-paths.sh). Refusing to merge until the list can be read." >&2
+  exit 2
+fi
+UI_GLOBS=$(ui_effective_globs "$REPO_ROOT")
+if [ -z "$(printf '%s' "$UI_GLOBS" | tr -d '[:space:]')" ]; then
+  echo "BLOCKED: design-review gate resolved an empty UI pattern list. Refusing to merge until the list can be read." >&2
+  exit 2
 fi
 
 # Get the PR's changed files. The diff endpoint rejects responses over 300
 # files; the files API is paginated and supports larger PRs. It caps at 3,000
 # files, so refuse to evaluate a truncated result rather than fail open.
-CHANGED_FILE_LIST=$(mktemp "${TMPDIR:-/tmp}/apexyard-pr-files.XXXXXX") || exit 2
+#
+# The dispatcher snapshot gives the count and the list first (AgDR-0256).
+# On a miss, the gate makes its own two calls. It reads the output straight
+# into memory. A temporary file let a same-uid process rewrite the list
+# between the write and the read (AgDR-0256 D2 rules 24 and 25).
 CHANGED_RC=0
 TOTAL_FILES=""
-if [ -z "$CMD_REPO" ] || ! TOTAL_FILES=$(gh api "repos/${CMD_REPO}/pulls/${PR_NUMBER}" --jq '.changed_files' 2>/dev/null) || ! printf '%s' "$TOTAL_FILES" | grep -qE '^[0-9]+$' || [ "$TOTAL_FILES" -gt 3000 ] || ! gh api --paginate "repos/${CMD_REPO}/pulls/${PR_NUMBER}/files?per_page=100" --jq '.[].filename' >"$CHANGED_FILE_LIST" 2>/dev/null; then
-  CHANGED_RC=1
+CHANGED=""
+if [ -n "$CMD_REPO" ] && CHANGED=$(prmeta_file_list "$PR_NUMBER" "$CMD_REPO") \
+  && TOTAL_FILES=$(prmeta_get count "$PR_NUMBER" "$CMD_REPO"); then
+  CHANGED_RC=0
+else
+  CHANGED=""
+  TOTAL_FILES=""
+  if [ -z "$CMD_REPO" ] || ! TOTAL_FILES=$(apexyard_gh api "repos/${CMD_REPO}/pulls/${PR_NUMBER}" --jq '.changed_files' 2>/dev/null) || ! printf '%s' "$TOTAL_FILES" | grep -qE '^[0-9]+$' || [ "$TOTAL_FILES" -gt 3000 ] || ! CHANGED=$(apexyard_gh api --paginate "repos/${CMD_REPO}/pulls/${PR_NUMBER}/files?per_page=100" --jq '.[].filename' 2>/dev/null); then
+    CHANGED_RC=1
+  fi
 fi
-CHANGED_COUNT=$(wc -l <"$CHANGED_FILE_LIST" 2>/dev/null | tr -d ' ')
-CHANGED_COUNT=${CHANGED_COUNT:-0}
-CHANGED=$(cat "$CHANGED_FILE_LIST" 2>/dev/null)
-rm -f "$CHANGED_FILE_LIST"
 if [ "$CHANGED_RC" -ne 0 ] || [ -z "$CHANGED" ] || [ "$TOTAL_FILES" -gt 3000 ]; then
   echo "BLOCKED: design-review gate could not determine the PR's changed files. Refusing to merge until the diff can be verified." >&2
   exit 2
@@ -249,7 +344,10 @@ To unblock:
   3. Ask the designer or operator to run:
        /approve-design ${PR_NUMBER}
      That skill writes the repo-qualified marker against the PR's HEAD on
-     GitHub, which is what this gate compares
+     GitHub, which is what this gate compares.
+     Or show the approval menu. The question must name the repo, the PR,
+     and the full head SHA. record-menu-approval.sh writes the marker
+     when the operator selects the approve option. Do not write it yourself.
   4. They retry the merge
 
   Do not hand-write this file. A raw redirect produces the wrong path (the
@@ -284,7 +382,26 @@ fi
 # local HEAD (see #55). If that resolution fails we BLOCK rather than fall back
 # to the local HEAD (#1091) — a local value is agent-controlled, so falling
 # back would silently void the check.
-APPROVED_SHA=$(tr -d '[:space:]' < "$APPROVAL")
+#
+# The typed /approve-design path writes a bare SHA. The menu path
+# (AgDR-0234) writes a structured record. Carry-over is unchanged: this
+# gate still requires an exact head match.
+if grep -q '^approval_channel=' "$APPROVAL" 2>/dev/null; then
+  _menu_lib="$(dirname "$0")/_lib-menu-approval.sh"
+  if [ ! -r "$_menu_lib" ]; then
+    echo "BLOCKED: design gate cannot load _lib-menu-approval.sh." >&2
+    exit 2
+  fi
+  # shellcheck source=/dev/null
+  . "$_menu_lib"
+  APPROVED_SHA=$(menu_approval_record_sha "$APPROVAL") || {
+    echo "BLOCKED: design approval menu record is invalid." >&2
+    echo "Re-run the approval menu or /approve-design ${PR_NUMBER}." >&2
+    exit 2
+  }
+else
+  APPROVED_SHA=$(tr -d '[:space:]' < "$APPROVAL")
+fi
 CURRENT_SHA=$(resolve_pr_head "$PR_NUMBER" "$CMD_REPO")
 if [ -z "$CURRENT_SHA" ]; then
   cat >&2 <<MSG

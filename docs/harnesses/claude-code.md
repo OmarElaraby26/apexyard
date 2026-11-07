@@ -6,7 +6,7 @@ Claude Code is ApexYard's reference harness. Nothing is translated: `CLAUDE.md` 
 
 ## What "full experience" means
 
-- **`CLAUDE.md` auto-load** — the Chief-of-Staff framing, SDLC, workflow gates, and the `@.claude/rules/*.md` imports are loaded into every session without any manual step.
+- **`CLAUDE.md` auto-load** — the Chief-of-Staff framing, gates, and rule index load at session start. `/setup` and SessionStart write this clone's absolute rule exclude into gitignored `.claude/settings.local.json`. Agents Read named framework rules when needed. Personal and managed-project rules remain eligible to load unless other settings exclude them. A new or repaired exclude applies in the next session. See AgDR-0233 and AgDR-0160.
 - **Mechanical gates fire on every tool call** — the `.claude/hooks/*.sh` scripts wire to `PreToolUse` / `PostToolUse` / `SessionStart` via `.claude/settings.json` and block (exit 2) or advise (exit 0) in real time.
 - **Slash-command skills** — each `.claude/skills/<name>/SKILL.md` is a typed `/command` (e.g. `/start-ticket`, `/decide`, `/code-review`, `/approve-merge`).
 - **Sub-agents** — Rex (code review), Hakim (security), Tariq (design review), Naqid (the contrarian), plus the department personas, each spawned via the `Agent` tool with role-scoped tools.
@@ -16,11 +16,11 @@ Claude Code is ApexYard's reference harness. Nothing is translated: `CLAUDE.md` 
 
 **Mechanically enforced (blocking):** the two-marker merge gate (Rex + CEO), red-CI merge block, ticket-first edits, migration-ticket-first edits, design-review gate for UI PRs, architecture-review gate for design-artifact PRs, secrets scanning, private-ref leak protection, branch-name and PR-title validation, and AgDR-for-architecture-change prompts.
 
-**Advisory (non-blocking reminders):** role-trigger banners (`detect-role-trigger.sh`), upstream-drift notices, MCP-reindex-after-clone/-pull nudges, and the self-discipline rules (plan mode, parallel-work/fan-out offers, loop mode, reporting style).
+**Advisory (non-blocking reminders):** role-trigger banners (`detect-role-trigger.sh`), upstream-drift notices, and the self-discipline rules (plan mode, parallel-work/fan-out offers, loop mode, reporting style).
 
 ## How it works (transport)
 
-There is no transport layer — Claude Code *is* the runtime the other adapters shell out to. The hooks read tool-call JSON on stdin, decide, and return an exit code Claude Code honors directly. `.claude/` is the canonical authoring surface for every other harness precisely because it is executed natively here.
+There is no transport layer for Claude Code itself. Cursor can load the same `.claude/` files when third-party configs are on. See [cursor.md](cursor.md). The hooks read tool-call JSON on stdin, decide, and return an exit code the harness honors. `.claude/` is the canonical authoring surface for every other harness because Claude Code executes it natively.
 
 ## How to install
 
